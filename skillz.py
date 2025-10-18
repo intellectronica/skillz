@@ -199,12 +199,17 @@ class SkillRegistry:
             )
 
         LOGGER.info("Discovering skills in %s", self.root)
-        for child in sorted(self.root.iterdir()):
-            if not child.is_dir():
-                continue
-            skill_md = child / SKILL_MARKDOWN
-            if not skill_md.is_file():
-                continue
+        self._skills_by_slug.clear()
+        self._skills_by_name.clear()
+
+        root = self.root.resolve()
+        skill_manifests = sorted(
+            (path for path in root.rglob(SKILL_MARKDOWN) if path.is_file()),
+            key=lambda path: str(path).lower(),
+        )
+
+        for skill_md in skill_manifests:
+            child = skill_md.parent
 
             try:
                 metadata, _ = parse_skill_md(skill_md)

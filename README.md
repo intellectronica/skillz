@@ -1,13 +1,8 @@
 # Skillz MCP Server
 
-**Status: experimental proof of concept – untested and unsafe for production use.**
+Experimental proof‑of‑concept. Potentially unsafe. Treat skills like untrusted code and run in sandboxes/containers. Use at your own risk.
 
-This repository hosts `skillz.py`, a single-file MCP server that exposes
-Anthropic-style Skills stored on disk to Model Context Protocol clients. It
-discovers folders containing a `SKILL.md` file with YAML front matter, registers
-each skill as both a prompt and a tool, and lazily loads content when the client
-requests it. Scripts bundled with a skill run inside a temporary workspace so
-the original files remain untouched.
+`skillz.py` is a single‑file MCP server that exposes Anthropic‑style skills (directories with a `SKILL.md` that starts with YAML front‑matter) to any MCP client. It recursively discovers skills, registers one tool per skill, returns authored instructions and absolute file paths, and can optionally run a helper script from the skill in a temporary workspace.
 
 ## Prerequisites
 
@@ -33,24 +28,34 @@ the original files remain untouched.
    uv run skillz.py /path/to/skills --list-skills
    ```
 
-## Tool Actions
+## Discovery and tool registration
 
-Each discovered skill registers a tool named simply by its slug (for example
-`algorithmic-art`). The tool description is populated from the skill summary.
-When invoked it:
+- Recursively walks the skills root and loads every `SKILL.md` (nesting supported).
+- One MCP tool is registered per skill. Tool name = the slug of `name` (e.g., `algorithmic-art`).
+- Tool description = the `description` from front‑matter (no extra metadata included).
 
-1. Requires a `task` string describing what the client wants to accomplish.
-2. Returns the raw `SKILL.md` instructions along with a `usage` block that
-   includes a suggested prompt and guidance the client can forward to their
-   model. The client is responsible for handing the instructions to the model.
-3. Optionally runs a bundled script when `script` is provided alongside a
-   `script_payload` mapping (keys: `args`, `env`, `files`, `stdin`, `workdir`).
-   Execution happens inside a temporary copy of the skill directory and the
-   result (command, stdout/stderr, return code, duration) is returned to the
-   caller.
+## Tool API (instruction‑first)
 
-The tool response always contains the authored instructions and guidance, plus
-the script result if one ran.
+Call a skill tool with a `task`. Skillz returns authored instructions and absolute paths to all assets so your client can drive its own model call (no model‑side sampling required). Optionally ask Skillz to run a helper script.
+
+Arguments
+- `task` (string, required)
+- `script` (string, optional): relative path to a helper script inside the skill
+- `script_payload` (object, optional):
+  - `args` (list[str])
+  - `env` (object[str->str])
+  - `files` (list[{path, content, encoding}])
+  - `stdin` (string or {content, encoding})
+  - `workdir` (string)
+- `script_timeout` (float, optional)
+
+Response (selected fields)
+- `instructions` (string): Markdown body of `SKILL.md`
+- `resources` (list[string]): absolute paths to every file in the skill (including `SKILL.md`)
+- `usage` (object): suggested prompt + guidance
+- `script_execution` (object when a script ran): `{command, cwd, returncode, stdout, stderr, duration_seconds}`; `stdout`/`stderr` are `{encoding, content}`
+
+Note: Skillz returns absolute paths but does not register MCP resources for file reads. Clients should read files directly from disk or provide their own file‑access flow.
 
 ## Security & Safety Notice
 

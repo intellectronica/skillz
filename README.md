@@ -6,7 +6,7 @@
 
 ---
 
-`skillz.py` is a single‑file MCP server that exposes Anthropic‑style skills (directories with a `SKILL.md` that starts with YAML front‑matter) to any MCP client. It recursively discovers skills, registers one tool per skill, returns authored instructions and absolute file paths, and can optionally run a helper script from the skill in a temporary workspace.
+`skillz.py` is a single‑file MCP server that exposes [Anthropic‑style skills](https://github.com/anthropics/skills) (directories with a `SKILL.md` that starts with YAML front‑matter) to any MCP client. It recursively discovers skills, registers one tool per skill, returns authored instructions and absolute file paths, and can optionally run a helper script from the skill in a temporary workspace.
 
 ## Prerequisites
 

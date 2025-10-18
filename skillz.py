@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.10"
+# requires-python = ">=3.12"
 # dependencies = [
 #     "fastmcp>=2.2.5",
 #     "pyyaml>=6.0",

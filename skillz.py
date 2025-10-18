@@ -248,14 +248,14 @@ class SkillRegistry:
         LOGGER.info("Loaded %d skills", len(self._skills_by_slug))
 
     def _collect_resources(self, directory: Path) -> tuple[Path, ...]:
-        files = [Path(SKILL_MARKDOWN)]
-        for file_path in sorted(directory.rglob("*")):
+        root = directory.resolve()
+        files = [root / SKILL_MARKDOWN]
+        for file_path in sorted(root.rglob("*")):
             if not file_path.is_file():
                 continue
-            rel = file_path.relative_to(directory)
-            if rel.name == SKILL_MARKDOWN and rel == Path(SKILL_MARKDOWN):
+            if file_path == root / SKILL_MARKDOWN:
                 continue
-            files.append(rel)
+            files.append(file_path)
         return tuple(files)
 
     def get(self, slug: str) -> Skill:

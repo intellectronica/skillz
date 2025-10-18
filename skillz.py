@@ -15,7 +15,7 @@ Usage examples::
 Manual smoke tests rely on the sample fixture in ``tmp/examples`` created by the
 project checklist. The ``--list-skills`` flag validates discovery without
 starting the transport, while additional sanity checks can be run with a short
-script that invokes the generated prompt and tool functions directly.
+script that invokes the generated tool functions directly.
 
 Security note: referenced scripts execute from copies of the skill directory in
 fresh temporary folders with a restricted environment (only ``PATH``/locale
@@ -53,7 +53,7 @@ from typing import (
 
 import yaml
 from fastmcp import Context, FastMCP
-from fastmcp.exceptions import PromptError, ToolError
+from fastmcp.exceptions import ToolError
 
 
 LOGGER = logging.getLogger("skillz")
@@ -466,26 +466,6 @@ def guess_mime(path: Path) -> str:
 Action = Literal["metadata", "read", "summarize", "run_script"]
 
 
-def register_skill_prompt(mcp: FastMCP, skill: Skill) -> Callable[..., Awaitable[str]]:
-    prompt_name = f"skill::{skill.slug}"
-
-    @mcp.prompt(name=prompt_name)
-    async def _skill_prompt(
-        ctx: Optional[Context] = None, *, _skill: Skill = skill
-    ) -> str:
-        try:
-            if ctx is not None:
-                await ctx.debug(f"Loading instructions for {_skill.metadata.name}")
-            return _skill.read_body()
-        except SkillError as exc:
-            LOGGER.error(
-                "Prompt load failed for %s: %s", _skill.slug, exc, exc_info=True
-            )
-            raise PromptError(str(exc)) from exc
-
-    return _skill_prompt
-
-
 def register_skill_tool(
     mcp: FastMCP, skill: Skill, *, timeout: float
 ) -> Callable[..., Awaitable[Mapping[str, Any]]]:
@@ -604,7 +584,6 @@ def build_server(registry: SkillRegistry, *, timeout: float) -> FastMCP:
         instructions=f"Loaded skills: {summary}",
     )
     for skill in registry.skills:
-        register_skill_prompt(mcp, skill)
         register_skill_tool(mcp, skill, timeout=timeout)
     return mcp
 

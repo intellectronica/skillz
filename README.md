@@ -36,20 +36,21 @@ the original files remain untouched.
 ## Tool Actions
 
 Each discovered skill registers a tool named simply by its slug (for example
-`algorithmic-art`). The tool
-description is populated from the skill metadata (name, summary, license,
-allowed tools, available resources). When invoked it:
+`algorithmic-art`). The tool description is populated from the skill summary.
+When invoked it:
 
 1. Requires a `task` string describing what the client wants to accomplish.
-2. Automatically calls `ctx.sample` with the skill’s `SKILL.md` body so the
-   model can ground its response in the published instructions.
+2. Returns the raw `SKILL.md` instructions along with a `usage` block that
+   includes a suggested prompt and guidance the client can forward to their
+   model. The client is responsible for handing the instructions to the model.
 3. Optionally runs a bundled script when `script` is provided alongside a
    `script_payload` mapping (keys: `args`, `env`, `files`, `stdin`, `workdir`).
    Execution happens inside a temporary copy of the skill directory and the
    result (command, stdout/stderr, return code, duration) is returned to the
    caller.
 
-The tool response contains the sampled plan plus the script result if one ran.
+The tool response always contains the authored instructions and guidance, plus
+the script result if one ran.
 
 ## Security & Safety Notice
 

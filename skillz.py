@@ -457,40 +457,14 @@ class TemporaryWorkspace:
 
 
 def _format_tool_description(skill: Skill) -> str:
-    """Compose a rich tool description from skill metadata."""
+    """Return the concise skill description for discovery responses."""
 
-    meta = skill.metadata
-    sections: list[str] = []
-
-    if meta.description:
-        sections.append(meta.description.strip())
-
-    if meta.license:
-        sections.append(f"License: {meta.license}")
-
-    if meta.allowed_tools:
-        tool_list = ", ".join(meta.allowed_tools)
-        sections.append(f"Allowed external tools: {tool_list}")
-    else:
-        sections.append("Allowed external tools: none")
-
-    if meta.extra:
-        extra_pairs = ", ".join(f"{key}={value}" for key, value in meta.extra.items())
-        sections.append(f"Extra metadata: {extra_pairs}")
-
-    if skill.resources:
-        preview = ", ".join(str(path) for path in skill.resources[:5])
-        if len(skill.resources) > 5:
-            preview += ", …"
-        sections.append(f"Packaged resources: {preview}")
-
-    sections.append(
-        "Call with `task` describing what you want, optionally `script` plus "
-        "`script_payload` (args/env/files/stdin/workdir) to run a bundled script. "
-        "The skill instructions are sampled automatically before execution."
-    )
-
-    return "\n\n".join(sections)
+    description = skill.metadata.description.strip()
+    if not description:  # pragma: no cover - defensive safeguard
+        raise SkillValidationError(
+            f"Skill {skill.slug} is missing a description after validation."
+        )
+    return description
 
 
 def register_skill_tool(
@@ -498,6 +472,8 @@ def register_skill_tool(
 ) -> Callable[..., Awaitable[Mapping[str, Any]]]:
     tool_name = skill.slug
     description = _format_tool_description(skill)
+    bound_skill = skill
+    bound_timeout = timeout
 
     @mcp.tool(name=tool_name, description=description)
     async def _skill_tool(  # type: ignore[unused-ignore]
@@ -505,16 +481,12 @@ def register_skill_tool(
         script: Optional[str] = None,
         script_payload: Optional[Mapping[str, Any]] = None,
         script_timeout: Optional[float] = None,
-        sample_options: Optional[Mapping[str, Any]] = None,
         ctx: Optional[Context] = None,
-        *,
-        _skill: Skill = skill,
-        _timeout: float = timeout,
     ) -> Mapping[str, Any]:
         start = asyncio.get_running_loop().time()
         LOGGER.info(
             "Skill %s tool invoked task=%s script=%s",
-            _skill.slug,
+            bound_skill.slug,
             task,
             script,
         )
@@ -523,36 +495,54 @@ def register_skill_tool(
             if not task.strip():
                 raise SkillError("The 'task' parameter must be a non-empty string.")
 
-            if ctx is None:
-                raise SkillError("Skill tool invocation requires an MCP context.")
-
-            instructions = _skill.read_body()
-            prompt = textwrap.dedent(
-                f"""
-                You are about to execute the skill '{_skill.metadata.name}'.
-
-                Skill instructions:
-                {instructions}
-
-                Task:
-                {task}
-
-                Summarize how the skill will approach this task, citing any key warnings.
-                """
-            ).strip()
-            options = dict(sample_options or {})
-            sample_response = await ctx.sample(prompt, **options)
-
+            instructions = bound_skill.read_body()
             response: dict[str, Any] = {
-                "skill": _skill.slug,
+                "skill": bound_skill.slug,
                 "task": task,
-                "plan": sample_response.text,
                 "metadata": {
-                    "name": _skill.metadata.name,
-                    "description": _skill.metadata.description,
-                    "license": _skill.metadata.license,
-                    "allowed_tools": list(_skill.metadata.allowed_tools),
-                    "extra": _skill.metadata.extra,
+                    "name": bound_skill.metadata.name,
+                    "description": bound_skill.metadata.description,
+                    "license": bound_skill.metadata.license,
+                    "allowed_tools": list(bound_skill.metadata.allowed_tools),
+                    "extra": bound_skill.metadata.extra,
+                },
+                "resources": [str(path) for path in bound_skill.resources],
+                "instructions": instructions,
+                "usage": {
+                    "suggested_prompt": textwrap.dedent(
+                        f"""
+                        You are using the skill '{bound_skill.metadata.name}'.
+
+                        Task:
+                        {task}
+
+                        Follow the published skill instructions exactly:
+
+                        {instructions}
+                        """
+                    ).strip(),
+                    "guidance": (
+                        "Share the `suggested_prompt` with your assistant or embed the"
+                        " `instructions` text directly alongside the task so the model"
+                        " can apply the skill as authored. If the instructions mention"
+                        " supporting files, call `ctx.read_resource` with one of the"
+                        " `available_resources` paths before handing data to the model."
+                    ),
+                    "script_execution": {
+                        "call_instructions": (
+                            "Invoke this tool again with the `script` parameter set to a"
+                            " path relative to the skill root and optionally include"
+                            " `script_payload` (keys: args, env, files, stdin, workdir)."
+                        ),
+                        "payload_fields": {
+                            "args": "List of strings forwarded as command arguments",
+                            "env": "Mapping of environment variables to merge with the default sandbox",
+                            "files": "Mapping of relative file paths to their contents (encoding + content)",
+                            "stdin": "String or bytes (base64) provided on standard input",
+                            "workdir": "Optional working directory relative to the copied skill root",
+                        },
+                        "available_resources": [str(path) for path in bound_skill.resources],
+                    },
                 },
             }
 
@@ -567,12 +557,12 @@ def register_skill_tool(
                 else:
                     raise SkillError("'script_payload' must be a mapping of script inputs.")
 
-                effective_timeout = _timeout
+                effective_timeout = bound_timeout
                 if script_timeout is not None:
                     effective_timeout = float(script_timeout)
 
                 result = await run_script(
-                    _skill,
+                    bound_skill,
                     script,
                     payload_mapping,
                     timeout=effective_timeout,
@@ -582,13 +572,13 @@ def register_skill_tool(
             return response
         except SkillError as exc:
             LOGGER.error(
-                "Skill %s invocation failed: %s", _skill.slug, exc, exc_info=True
+                "Skill %s invocation failed: %s", bound_skill.slug, exc, exc_info=True
             )
             raise ToolError(str(exc)) from exc
         finally:
             duration = asyncio.get_running_loop().time() - start
             LOGGER.info(
-                "Skill %s invocation completed in %.2fs", _skill.slug, duration
+                "Skill %s invocation completed in %.2fs", bound_skill.slug, duration
             )
 
     return _skill_tool

@@ -568,11 +568,33 @@ def register_skill_tool(
     return _skill_tool
 
 
-def configure_logging(verbose: bool) -> None:
-    level = logging.DEBUG if verbose else logging.INFO
+def configure_logging(verbose: bool, log_to_file: bool) -> None:
+    """Set up console logging and optional file logging."""
+
+    log_format = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+    handlers: list[logging.Handler] = []
+
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.DEBUG if verbose else logging.INFO)
+    console_handler.setFormatter(logging.Formatter(log_format))
+    handlers.append(console_handler)
+
+    if log_to_file:
+        log_path = Path("/tmp/skillz.log")
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+        except OSError as exc:  # pragma: no cover - filesystem failure is rare
+            print(f"Failed to configure log file {log_path}: {exc}", file=sys.stderr)
+        else:
+            file_handler.setLevel(logging.DEBUG)
+            file_handler.setFormatter(logging.Formatter(log_format))
+            handlers.append(file_handler)
+
     logging.basicConfig(
-        level=level,
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        level=logging.DEBUG if (log_to_file or verbose) else logging.INFO,
+        handlers=handlers,
+        force=True,
     )
 
 
@@ -622,6 +644,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser.add_argument("--path", default="/mcp", help="Path for HTTP transport")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
     parser.add_argument(
+        "--log",
+        action="store_true",
+        help="Write very verbose logs to /tmp/skillz.log",
+    )
+    parser.add_argument(
         "--list-skills",
         action="store_true",
         help="List parsed skills and exit without starting the server",
@@ -631,7 +658,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[list[str]] = None) -> None:
     args = parse_args(argv)
-    configure_logging(args.verbose)
+    configure_logging(args.verbose, args.log)
+
+    if args.log:
+        LOGGER.info("Verbose file logging enabled at /tmp/skillz.log")
 
     registry = SkillRegistry(args.skills_root)
     registry.load()

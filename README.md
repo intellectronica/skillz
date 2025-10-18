@@ -35,7 +35,8 @@ the original files remain untouched.
 
 ## Tool Actions
 
-Each discovered skill registers a tool named `skill_tool::<slug>`. The tool
+Each discovered skill registers a tool named simply by its slug (for example
+`algorithmic-art`). The tool
 description is populated from the skill metadata (name, summary, license,
 allowed tools, available resources). When invoked it:
 

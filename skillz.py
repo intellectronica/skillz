@@ -496,7 +496,7 @@ def _format_tool_description(skill: Skill) -> str:
 def register_skill_tool(
     mcp: FastMCP, skill: Skill, *, timeout: float
 ) -> Callable[..., Awaitable[Mapping[str, Any]]]:
-    tool_name = f"skill_tool::{skill.slug}"
+    tool_name = skill.slug
     description = _format_tool_description(skill)
 
     @mcp.tool(name=tool_name, description=description)

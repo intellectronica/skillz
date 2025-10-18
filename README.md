@@ -35,16 +35,20 @@ the original files remain untouched.
 
 ## Tool Actions
 
-Each discovered skill registers a tool named `skill_tool::<slug>` supporting the
-following actions:
+Each discovered skill registers a tool named `skill_tool::<slug>`. The tool
+description is populated from the skill metadata (name, summary, license,
+allowed tools, available resources). When invoked it:
 
-- `metadata`: return the skill’s metadata, resource list, and directory info.
-- `read`: stream a resource (including `SKILL.md`) as text or base64.
-- `summarize`: ask the MCP runtime to summarize a resource using `ctx.sample`.
-- `run_script`: execute a script from the skill in a temporary directory and
-  return stdout/stderr plus exit metadata.
+1. Requires a `task` string describing what the client wants to accomplish.
+2. Automatically calls `ctx.sample` with the skill’s `SKILL.md` body so the
+   model can ground its response in the published instructions.
+3. Optionally runs a bundled script when `script` is provided alongside a
+   `script_payload` mapping (keys: `args`, `env`, `files`, `stdin`, `workdir`).
+   Execution happens inside a temporary copy of the skill directory and the
+   result (command, stdout/stderr, return code, duration) is returned to the
+   caller.
 
-Prompts are registered as `skill::<slug>` and return the `SKILL.md` body.
+The tool response contains the sampled plan plus the script result if one ran.
 
 ## Security & Safety Notice
 

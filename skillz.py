@@ -29,7 +29,6 @@ import asyncio
 import base64
 import contextlib
 import logging
-import mimetypes
 import os
 import re
 import shlex
@@ -45,7 +44,6 @@ from typing import (
     Callable,
     Dict,
     Iterable,
-    Literal,
     Mapping,
     MutableMapping,
     Optional,
@@ -458,25 +456,55 @@ class TemporaryWorkspace:
         return destination
 
 
-def guess_mime(path: Path) -> str:
-    mime, _ = mimetypes.guess_type(path.name)
-    return mime or "application/octet-stream"
+def _format_tool_description(skill: Skill) -> str:
+    """Compose a rich tool description from skill metadata."""
 
+    meta = skill.metadata
+    sections: list[str] = []
 
-Action = Literal["metadata", "read", "summarize", "run_script"]
+    if meta.description:
+        sections.append(meta.description.strip())
+
+    if meta.license:
+        sections.append(f"License: {meta.license}")
+
+    if meta.allowed_tools:
+        tool_list = ", ".join(meta.allowed_tools)
+        sections.append(f"Allowed external tools: {tool_list}")
+    else:
+        sections.append("Allowed external tools: none")
+
+    if meta.extra:
+        extra_pairs = ", ".join(f"{key}={value}" for key, value in meta.extra.items())
+        sections.append(f"Extra metadata: {extra_pairs}")
+
+    if skill.resources:
+        preview = ", ".join(str(path) for path in skill.resources[:5])
+        if len(skill.resources) > 5:
+            preview += ", …"
+        sections.append(f"Packaged resources: {preview}")
+
+    sections.append(
+        "Call with `task` describing what you want, optionally `script` plus "
+        "`script_payload` (args/env/files/stdin/workdir) to run a bundled script. "
+        "The skill instructions are sampled automatically before execution."
+    )
+
+    return "\n\n".join(sections)
 
 
 def register_skill_tool(
     mcp: FastMCP, skill: Skill, *, timeout: float
 ) -> Callable[..., Awaitable[Mapping[str, Any]]]:
     tool_name = f"skill_tool::{skill.slug}"
+    description = _format_tool_description(skill)
 
-    @mcp.tool(name=tool_name)
+    @mcp.tool(name=tool_name, description=description)
     async def _skill_tool(  # type: ignore[unused-ignore]
-        action: Action,
-        target: Optional[str] = None,
-        payload: Optional[Mapping[str, Any]] = None,
-        summary_prompt: Optional[str] = None,
+        task: str,
+        script: Optional[str] = None,
+        script_payload: Optional[Mapping[str, Any]] = None,
+        script_timeout: Optional[float] = None,
         sample_options: Optional[Mapping[str, Any]] = None,
         ctx: Optional[Context] = None,
         *,
@@ -485,84 +513,82 @@ def register_skill_tool(
     ) -> Mapping[str, Any]:
         start = asyncio.get_running_loop().time()
         LOGGER.info(
-            "Skill %s tool invoked action=%s target=%s", _skill.slug, action, target
+            "Skill %s tool invoked task=%s script=%s",
+            _skill.slug,
+            task,
+            script,
         )
 
         try:
-            if action == "metadata":
-                return {
+            if not task.strip():
+                raise SkillError("The 'task' parameter must be a non-empty string.")
+
+            if ctx is None:
+                raise SkillError("Skill tool invocation requires an MCP context.")
+
+            instructions = _skill.read_body()
+            prompt = textwrap.dedent(
+                f"""
+                You are about to execute the skill '{_skill.metadata.name}'.
+
+                Skill instructions:
+                {instructions}
+
+                Task:
+                {task}
+
+                Summarize how the skill will approach this task, citing any key warnings.
+                """
+            ).strip()
+            options = dict(sample_options or {})
+            sample_response = await ctx.sample(prompt, **options)
+
+            response: dict[str, Any] = {
+                "skill": _skill.slug,
+                "task": task,
+                "plan": sample_response.text,
+                "metadata": {
                     "name": _skill.metadata.name,
-                    "slug": _skill.slug,
                     "description": _skill.metadata.description,
                     "license": _skill.metadata.license,
                     "allowed_tools": list(_skill.metadata.allowed_tools),
                     "extra": _skill.metadata.extra,
-                    "resources": [str(path) for path in _skill.resources],
-                }
+                },
+            }
 
-            if action == "read":
-                if not target:
-                    raise SkillError("'read' action requires 'target' relative path.")
-                resource_path = resolve_within(_skill.directory, target)
-                if not resource_path.exists() or not resource_path.is_file():
-                    raise SkillError(
-                        f"Resource '{target}' not found for {_skill.slug}."
-                    )
-                data = resource_path.read_bytes()
-                response = encode_output(data)
-                response.update(
-                    {
-                        "path": target,
-                        "mime_type": guess_mime(resource_path),
-                    }
+            if script is not None:
+                if not script.strip():
+                    raise SkillError("Script path, if provided, must be a non-empty string.")
+                payload_mapping: Mapping[str, Any]
+                if script_payload is None:
+                    payload_mapping = {}
+                elif isinstance(script_payload, Mapping):
+                    payload_mapping = dict(script_payload)
+                else:
+                    raise SkillError("'script_payload' must be a mapping of script inputs.")
+
+                effective_timeout = _timeout
+                if script_timeout is not None:
+                    effective_timeout = float(script_timeout)
+
+                result = await run_script(
+                    _skill,
+                    script,
+                    payload_mapping,
+                    timeout=effective_timeout,
                 )
-                return response
+                response["script_execution"] = result
 
-            if action == "summarize":
-                if ctx is None:
-                    raise SkillError(
-                        "Summarize action requires context sampling support."
-                    )
-                if not target:
-                    raise SkillError("'summarize' action requires 'target'.")
-                resource_path = resolve_within(_skill.directory, target)
-                if not resource_path.is_file():
-                    raise SkillError(
-                        f"Resource '{target}' not found for {_skill.slug}."
-                    )
-                content = resource_path.read_text(encoding="utf-8", errors="ignore")
-                prompt = summary_prompt or textwrap.dedent(
-                    f"""
-                    Summarize the following content from the skill '{_skill.metadata.name}'.
-                    Focus on actionable steps and key caveats. Return a concise summary.
-
-                    Content:
-                    {content}
-                    """
-                )
-                options = dict(sample_options or {})
-                response = await ctx.sample(prompt, **options)
-                return {
-                    "summary": response.text,
-                    "target": target,
-                }
-
-            if action == "run_script":
-                if not target:
-                    raise SkillError("'run_script' action requires 'target'.")
-                result = await run_script(_skill, target, payload, timeout=_timeout)
-                return result
-
-            raise SkillError(f"Unsupported action '{action}'.")
+            return response
         except SkillError as exc:
             LOGGER.error(
-                "Skill %s action %s failed: %s", _skill.slug, action, exc, exc_info=True
+                "Skill %s invocation failed: %s", _skill.slug, exc, exc_info=True
             )
             raise ToolError(str(exc)) from exc
         finally:
             duration = asyncio.get_running_loop().time() - start
             LOGGER.info(
-                "Skill %s action %s completed in %.2fs", _skill.slug, action, duration
+                "Skill %s invocation completed in %.2fs", _skill.slug, duration
             )
 
     return _skill_tool

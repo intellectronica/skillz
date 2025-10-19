@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/intellectronica-skillz-badge.png)](https://mseep.ai/app/intellectronica-skillz)
+
 # Skillz MCP Server
 
 ---

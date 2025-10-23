@@ -2,3 +2,4 @@
 /.specstory/
 /.ruff_cache/
 /AGENTS.md
+tmp/

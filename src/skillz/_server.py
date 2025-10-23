@@ -40,7 +40,9 @@ from typing import (
     Mapping,
     MutableMapping,
     Optional,
+    TypedDict,
 )
+from urllib.parse import quote
 
 import yaml
 from fastmcp import Context, FastMCP
@@ -113,6 +115,14 @@ class Skill:
             f"Skill {self.slug} is missing YAML front matter "
             "and cannot be served."
         )
+
+
+class SkillResourceMetadata(TypedDict):
+    """Metadata describing a registered skill resource."""
+
+    path: str
+    relative_path: str
+    uri: str
 
 
 def slugify(value: str) -> str:
@@ -497,6 +507,61 @@ class TemporaryWorkspace:
         return destination
 
 
+def _build_resource_uri(skill: Skill, relative_path: Path) -> str:
+    encoded_slug = quote(skill.slug, safe="")
+    encoded_parts = [quote(part, safe="") for part in relative_path.parts]
+    path_suffix = "/".join(encoded_parts)
+    if path_suffix:
+        return f"resource://skillz/{encoded_slug}/{path_suffix}"
+    return f"resource://skillz/{encoded_slug}"
+
+
+def register_skill_resources(
+    mcp: FastMCP, skill: Skill
+) -> tuple[SkillResourceMetadata, ...]:
+    """Register FastMCP resources for each file in a skill."""
+
+    metadata: list[SkillResourceMetadata] = []
+    for resource_path in skill.resources:
+        try:
+            relative_path = resource_path.relative_to(skill.directory)
+        except ValueError:  # pragma: no cover - defensive safeguard
+            relative_path = Path(resource_path.name)
+
+        relative_display = relative_path.as_posix()
+        uri = _build_resource_uri(skill, relative_path)
+
+        def _make_resource_reader(path: Path) -> Callable[[], str | bytes]:
+            def _read_resource() -> str | bytes:
+                try:
+                    data = path.read_bytes()
+                except OSError as exc:  # pragma: no cover - filesystem failure is rare
+                    raise SkillError(
+                        f"Failed to read resource '{path}': {exc}"
+                    ) from exc
+
+                try:
+                    return data.decode("utf-8")
+                except UnicodeDecodeError:
+                    return data
+
+            return _read_resource
+
+        mcp.resource(uri, name=f"{skill.slug}:{relative_display}")(
+            _make_resource_reader(resource_path)
+        )
+
+        metadata.append(
+            {
+                "path": str(resource_path),
+                "relative_path": relative_display,
+                "uri": uri,
+            }
+        )
+
+    return tuple(metadata)
+
+
 def _format_tool_description(skill: Skill) -> str:
     """Return the concise skill description for discovery responses."""
 
@@ -509,12 +574,17 @@ def _format_tool_description(skill: Skill) -> str:
 
 
 def register_skill_tool(
-    mcp: FastMCP, skill: Skill, *, timeout: float
+    mcp: FastMCP,
+    skill: Skill,
+    *,
+    timeout: float,
+    resources: tuple[SkillResourceMetadata, ...],
 ) -> Callable[..., Awaitable[Mapping[str, Any]]]:
     tool_name = skill.slug
     description = _format_tool_description(skill)
     bound_skill = skill
     bound_timeout = timeout
+    bound_resources = resources
 
     @mcp.tool(name=tool_name, description=description)
     async def _skill_tool(  # type: ignore[unused-ignore]
@@ -539,6 +609,17 @@ def register_skill_tool(
                 )
 
             instructions = bound_skill.read_body()
+            resource_entries = [
+                {
+                    "path": entry["path"],
+                    "relative_path": entry["relative_path"],
+                    "uri": entry["uri"],
+                }
+                for entry in bound_resources
+            ]
+            resource_uris = [entry["uri"] for entry in resource_entries]
+            legacy_paths = [entry["path"] for entry in resource_entries]
+
             response: dict[str, Any] = {
                 "skill": bound_skill.slug,
                 "task": task,
@@ -549,7 +630,7 @@ def register_skill_tool(
                     "allowed_tools": list(bound_skill.metadata.allowed_tools),
                     "extra": bound_skill.metadata.extra,
                 },
-                "resources": [str(path) for path in bound_skill.resources],
+                "resources": resource_entries,
                 "instructions": instructions,
                 "usage": {
                     "suggested_prompt": textwrap.dedent(
@@ -569,7 +650,7 @@ def register_skill_tool(
 Share the `suggested_prompt` with your assistant or embed the
 `instructions` text directly alongside the task so the model can apply
 the skill as authored. If the instructions mention supporting files,
-call `ctx.read_resource` with one of the `available_resources` paths
+call `ctx.read_resource` with one of the URIs in `available_resources`
 before handing data to the model.
 """
                     ).strip(),
@@ -604,7 +685,8 @@ relative to the skill root and optionally include `script_payload`
                             ),
                         },
                         "available_resources": [
-                            str(path) for path in bound_skill.resources
+                            *resource_uris,
+                            *legacy_paths,
                         ],
                     },
                 },
@@ -702,7 +784,13 @@ def build_server(registry: SkillRegistry, *, timeout: float) -> FastMCP:
         instructions=f"Loaded skills: {summary}",
     )
     for skill in registry.skills:
-        register_skill_tool(mcp, skill, timeout=timeout)
+        resource_metadata = register_skill_resources(mcp, skill)
+        register_skill_tool(
+            mcp,
+            skill,
+            timeout=timeout,
+            resources=resource_metadata,
+        )
     return mcp
 
 

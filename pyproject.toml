@@ -1,10 +1,10 @@
 [project]
 name = "skillz"
 version = "0.1.0"
-description = "MCP server that exposes Anthropic-style skills via FastMCP."
+description = "MCP server that exposes Claude-style skills to any MCP client."
 readme = "README.md"
 authors = [
-    { name = "Intellectronica" }
+    { name = "Eleanor Berger", email = "eleanor@intellectronica.net" }
 ]
 requires-python = ">=3.12"
 dependencies = [
@@ -12,7 +12,7 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 license = { file = "LICENSE" }
-keywords = ["mcp", "skills", "fastmcp", "anthropic"]
+keywords = ["mcp", "skills", "fastmcp", "claude"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",

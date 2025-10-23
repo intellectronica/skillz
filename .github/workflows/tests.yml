@@ -1,0 +1,27 @@
+name: CI Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up uv with Python 3.14
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+          python-version: "3.14"
+      - name: Sync dependencies
+        run: uv sync
+      - name: Run tests
+        run: uv run pytest

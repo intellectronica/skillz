@@ -47,6 +47,214 @@
 4. Add `--verbose` for console debug logs or `--log` for
    extremely verbose output written to `/tmp/skillz.log`.
 
+## Installation
+
+### Quick Install
+
+Click one of the buttons below to install the MCP server in your preferred IDE:
+
+[![Install in VS Code](https://img.shields.io/badge/Use_Skillz_in-VS_Code-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect/mcp/install?name=Skillz&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22skillz%22%5D%2C%22env%22%3A%7B%7D%7D)
+[![Install in VS Code Insiders](https://img.shields.io/badge/Use_Skillz_in-VS_Code_Insiders-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=Skillz&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22skillz%22%5D%2C%22env%22%3A%7B%7D%7D&quality=insiders)
+[![Install in Visual Studio](https://img.shields.io/badge/Use_Skillz_in-Visual_Studio-C16FDE?style=flat-square&logo=visualstudio&logoColor=white)](https://vs-open.link/mcp-install?%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22skillz%22%5D%2C%22env%22%3A%7B%7D%7D)
+[![Install in Cursor](https://img.shields.io/badge/Use_Skillz_in-Cursor-000000?style=flat-square&logoColor=white)](https://cursor.com/en/install-mcp?name=Skillz&config=eyJuYW1lIjoiU2tpbGx6IiwiY29tbWFuZCI6InV2eCIsImFyZ3MiOlsic2tpbGx6Il0sImVudiI6e319)
+[![Install in Goose](https://block.github.io/goose/img/extension-install-dark.svg)](https://block.github.io/goose/extension?cmd=uvx&arg=skillz&id=Skillz&name=Skillz&description=MCP%20Server%20for%20Skillz)
+[![Add MCP Server Skillz to LM Studio](https://files.lmstudio.ai/deeplink/mcp-install-light.svg)](https://lmstudio.ai/install-mcp?name=Skillz&config=eyJuYW1lIjoiU2tpbGx6IiwiY29tbWFuZCI6InV2eCIsImFyZ3MiOlsic2tpbGx6Il0sImVudiI6e319)
+
+### Manual Installation
+
+**Standard config** works in most tools:
+
+```js
+{
+  "servers": {
+    "Skillz": {
+      "command": "uvx",
+      "args": [
+        "skillz"
+      ],
+      "env": {}
+    }
+  }
+}
+```
+
+<details>
+<summary>VS Code</summary>
+
+#### Click the button to install:
+
+[![Install in VS Code](https://img.shields.io/badge/Use_Skillz_in-VS_Code-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://vscode.dev/redirect/mcp/install?name=Skillz&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22skillz%22%5D%2C%22env%22%3A%7B%7D%7D)
+
+#### Or install manually:
+
+Follow the MCP install [guide](https://code.visualstudio.com/docs/copilot/chat/mcp-servers#_add-an-mcp-server), use the standard config above. You can also install the Skillz MCP server using the VS Code CLI:
+
+```bash
+code --add-mcp '{\"name\":\"Skillz\",\"command\":\"uvx\",\"args\":[\"skillz\"],\"env\":{}}'
+```
+
+After installation, the Skillz MCP server will be available for use with your GitHub Copilot agent in VS Code.
+</details>
+
+<details>
+<summary>VS Code Insiders</summary>
+
+#### Click the button to install:
+
+[![Install in VS Code Insiders](https://img.shields.io/badge/Use_Skillz_in-VS_Code_Insiders-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=Skillz&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22skillz%22%5D%2C%22env%22%3A%7B%7D%7D&quality=insiders)
+
+#### Or install manually:
+
+Follow the MCP install [guide](https://code.visualstudio.com/docs/copilot/chat/mcp-servers#_add-an-mcp-server), use the standard config above. You can also install the Skillz MCP server using the VS Code Insiders CLI:
+
+```bash
+code-insiders --add-mcp '{\"name\":\"Skillz\",\"command\":\"uvx\",\"args\":[\"skillz\"],\"env\":{}}'
+```
+
+After installation, the Skillz MCP server will be available for use with your GitHub Copilot agent in VS Code Insiders.
+</details>
+
+<details>
+<summary>Visual Studio</summary>
+
+#### Click the button to install:
+
+[![Install in Visual Studio](https://img.shields.io/badge/Use_Skillz_in-Visual_Studio-C16FDE?style=flat-square&logo=visualstudio&logoColor=white)](https://vs-open.link/mcp-install?%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22skillz%22%5D%2C%22env%22%3A%7B%7D%7D)
+
+#### Or install manually:
+
+1. Open Visual Studio
+2. Navigate to the GitHub Copilot Chat window
+3. Click the tools icon (🛠️) in the chat toolbar
+4. Click the + "Add Server" button to open the "Configure MCP server" dialog
+5. Fill in the configuration:
+   - **Server ID**: `Skillz`
+   - **Type**: Select `stdio` from the dropdown
+   - **Command**: `uvx`
+   - **Arguments**: `skillz`
+6. Click "Save" to add the server
+
+For detailed instructions, see the [Visual Studio MCP documentation](https://learn.microsoft.com/visualstudio/ide/mcp-servers).
+</details>
+
+<details>
+<summary>Cursor</summary>
+
+#### Click the button to install:
+
+[![Install in Cursor](https://img.shields.io/badge/Use_Skillz_in-Cursor-000000?style=flat-square&logoColor=white)](https://cursor.com/en/install-mcp?name=Skillz&config=eyJuYW1lIjoiU2tpbGx6IiwiY29tbWFuZCI6InV2eCIsImFyZ3MiOlsic2tpbGx6Il0sImVudiI6e319)
+
+#### Or install manually:
+
+Go to `Cursor Settings` -> `MCP` -> `Add new MCP Server`. Name to your liking, use `command` type with the command from the standard config above. You can also verify config or add command like arguments via clicking `Edit`.
+</details>
+
+<details>
+<summary>Goose</summary>
+
+#### Click the button to install:
+
+[![Install in Goose](https://block.github.io/goose/img/extension-install-dark.svg)](https://block.github.io/goose/extension?cmd=uvx&arg=skillz&id=Skillz&name=Skillz&description=MCP%20Server%20for%20Skillz)
+
+#### Or install manually:
+
+Go to `Advanced settings` -> `Extensions` -> `Add custom extension`. Name to your liking, use type `STDIO`, and set the `command` from the standard config above. Click "Add Extension".
+</details>
+
+<details>
+<summary>LM Studio</summary>
+
+#### Click the button to install:
+
+[![Add MCP Server Skillz to LM Studio](https://files.lmstudio.ai/deeplink/mcp-install-light.svg)](https://lmstudio.ai/install-mcp?name=Skillz&config=eyJuYW1lIjoiU2tpbGx6IiwiY29tbWFuZCI6InV2eCIsImFyZ3MiOlsic2tpbGx6Il0sImVudiI6e319)
+
+#### Or install manually:
+
+Go to `Program` in the right sidebar -> `Install` -> `Edit mcp.json`. Use the standard config above.
+</details>
+
+<details>
+<summary>Amp</summary>
+
+Add via the Amp VS Code extension settings screen or by updating your settings.json file:
+
+```json
+"amp.mcpServers": 
+  "Skillz": {
+    "command": "uvx",
+    "args": [
+      "skillz"
+    ],
+    "env": {}
+  }
+
+```
+
+**Amp CLI Setup:**
+
+Add via the `amp mcp add` command below:
+
+```bash
+amp mcp add Skillz -- uvx skillz
+```
+</details>
+
+<details>
+<summary>Codex</summary>
+
+Create or edit the configuration file `~/.codex/config.toml` and add:
+
+```toml
+[mcp_servers.Skillz]
+command = "uvx"
+args = ["skillz"]
+```
+
+For more information, see the [Codex MCP documentation](https://github.com/openai/codex/blob/main/codex-rs/config.md#mcp_servers).
+</details>
+
+<details>
+<summary>Gemini CLI</summary>
+
+Follow the MCP install [guide](https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md#configure-the-mcp-server-in-settingsjson), use the standard config above.
+</details>
+
+<details>
+<summary>OpenCode</summary>
+
+Follow the MCP Servers [documentation](https://opencode.ai/docs/mcp-servers/). For example in `~/.config/opencode/opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "Skillz": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "skillz"
+      ],
+      "enabled": true
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary>Warp</summary>
+
+Go to `Settings` -> `AI` -> `Manage MCP Servers` -> `+ Add` to [add an MCP Server](https://docs.warp.dev/knowledge-and-collaboration/mcp#adding-an-mcp-server). Use the standard config above.
+
+Alternatively, use the slash command `/add-mcp` in the Warp prompt and paste the standard config from above.
+</details>
+
+<details>
+<summary>Windsurf</summary>
+
+Follow Windsurf MCP [documentation](https://docs.windsurf.com/windsurf/cascade/mcp). Use the standard config above.
+</details>
+
 ## CLI reference
 
 `skillz` understands the following flags:

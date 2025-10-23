@@ -123,6 +123,7 @@ class SkillResourceMetadata(TypedDict):
     path: str
     relative_path: str
     uri: str
+    runnable: bool
 
 
 def slugify(value: str) -> str:
@@ -516,6 +517,16 @@ def _build_resource_uri(skill: Skill, relative_path: Path) -> str:
     return f"resource://skillz/{encoded_slug}"
 
 
+def _is_probably_script(path: Path) -> bool:
+    """Return True when a resource looks executable."""
+
+    try:
+        resolve_command(path)
+    except (OSError, SkillExecutionError, SkillError):
+        return False
+    return True
+
+
 def register_skill_resources(
     mcp: FastMCP, skill: Skill
 ) -> tuple[SkillResourceMetadata, ...]:
@@ -530,6 +541,10 @@ def register_skill_resources(
 
         relative_display = relative_path.as_posix()
         uri = _build_resource_uri(skill, relative_path)
+        is_instructions_file = resource_path == skill.instructions_path
+        runnable = False
+        if not is_instructions_file:
+            runnable = _is_probably_script(resource_path)
 
         def _make_resource_reader(path: Path) -> Callable[[], str | bytes]:
             def _read_resource() -> str | bytes:
@@ -556,6 +571,7 @@ def register_skill_resources(
                 "path": str(resource_path),
                 "relative_path": relative_display,
                 "uri": uri,
+                "runnable": runnable,
             }
         )
 
@@ -614,11 +630,21 @@ def register_skill_tool(
                     "path": entry["path"],
                     "relative_path": entry["relative_path"],
                     "uri": entry["uri"],
+                    "runnable": entry["runnable"],
                 }
                 for entry in bound_resources
             ]
             resource_uris = [entry["uri"] for entry in resource_entries]
             legacy_paths = [entry["path"] for entry in resource_entries]
+            script_entries = [
+                {
+                    "path": entry["path"],
+                    "relative_path": entry["relative_path"],
+                    "uri": entry["uri"],
+                }
+                for entry in resource_entries
+                if entry["runnable"]
+            ]
 
             response: dict[str, Any] = {
                 "skill": bound_skill.slug,
@@ -658,8 +684,9 @@ before handing data to the model.
                         "call_instructions": textwrap.dedent(
                             """\
 Invoke this tool again with the `script` parameter set to a path
-relative to the skill root and optionally include `script_payload`
-(keys: args, env, files, stdin, workdir).
+relative to the skill root (choose from `available_scripts`) and
+optionally include `script_payload` (keys: args, env, files, stdin,
+workdir).
 """
                         ).strip(),
                         "payload_fields": {
@@ -684,6 +711,7 @@ relative to the skill root and optionally include `script_payload`
                                 "copied skill root"
                             ),
                         },
+                        "available_scripts": script_entries,
                         "available_resources": [
                             *resource_uris,
                             *legacy_paths,
@@ -697,6 +725,31 @@ relative to the skill root and optionally include `script_payload`
                     raise SkillError(
                         "Script path, if provided, must be a non-empty string."
                     )
+                normalized_script = script.replace("\\", "/")
+                script_path = Path(normalized_script)
+                if script_path.is_absolute():
+                    raise SkillError(
+                        "Script path must be relative to the skill directory."
+                    )
+                normalized_relative = script_path.as_posix()
+                matching_resource = next(
+                    (
+                        entry
+                        for entry in resource_entries
+                        if entry["relative_path"] == normalized_relative
+                    ),
+                    None,
+                )
+                if matching_resource and not matching_resource["runnable"]:
+                    raise SkillError(
+                        "'{relative}' is a resource, not an executable. Use "
+                        "ctx.read_resource('{uri}') to read it instead."
+                        .format(
+                            relative=matching_resource["relative_path"],
+                            uri=matching_resource["uri"],
+                        )
+                    )
+                script = normalized_relative
                 payload_mapping: Mapping[str, Any]
                 if script_payload is None:
                     payload_mapping = {}

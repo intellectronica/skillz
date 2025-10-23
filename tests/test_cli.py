@@ -1,9 +1,23 @@
 from pathlib import Path
 
+import pytest
+
 from skillz import parse_args
 
 
-def test_parse_args_defaults(tmp_path: Path) -> None:
+def test_parse_args_defaults_to_home_directory(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_home = Path("/tmp/fake-home")
+    monkeypatch.setenv("HOME", str(fake_home))
+
+    args = parse_args([])
+
+    assert args.skills_root == fake_home / ".skillz"
+    assert args.timeout == 60.0
+    assert args.transport == "stdio"
+    assert args.list_skills is False
+
+
+def test_parse_args_custom_root(tmp_path: Path) -> None:
     args = parse_args([str(tmp_path)])
 
     assert args.skills_root == Path(tmp_path)

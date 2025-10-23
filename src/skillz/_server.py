@@ -53,6 +53,7 @@ LOGGER = logging.getLogger("skillz")
 FRONT_MATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)", re.DOTALL)
 SKILL_MARKDOWN = "SKILL.md"
 DEFAULT_TIMEOUT = 60.0
+DEFAULT_SKILLS_ROOT = Path("~/.skillz")
 SERVER_NAME = "Skillz MCP Server"
 SERVER_VERSION = __version__
 
@@ -637,7 +638,10 @@ def list_skills(registry: SkillRegistry) -> None:
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Skillz MCP server.")
     parser.add_argument(
-        "skills_root", type=Path, help="Directory containing skill folders"
+        "skills_root",
+        type=Path,
+        nargs="?",
+        help=f"Directory containing skill folders (default: {DEFAULT_SKILLS_ROOT})",
     )
     parser.add_argument(
         "--timeout",
@@ -669,7 +673,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="List parsed skills and exit without starting the server",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    skills_root = args.skills_root or DEFAULT_SKILLS_ROOT
+    if not isinstance(skills_root, Path):
+        skills_root = Path(skills_root)
+    args.skills_root = skills_root.expanduser()
+    return args
 
 
 def main(argv: Optional[list[str]] = None) -> None:

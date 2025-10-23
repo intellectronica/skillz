@@ -535,7 +535,7 @@ def register_skill_resources(
             def _read_resource() -> str | bytes:
                 try:
                     data = path.read_bytes()
-                except OSError as exc:  # pragma: no cover - filesystem failure is rare
+                except OSError as exc:  # pragma: no cover
                     raise SkillError(
                         f"Failed to read resource '{path}': {exc}"
                     ) from exc

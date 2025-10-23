@@ -5,10 +5,10 @@ Usage examples::
     uv run python -m skillz /path/to/skills --verbose
     uv run python -m skillz tmp/examples --list-skills
 
-Manual smoke tests rely on the sample fixture in ``tmp/examples`` created by the
-project checklist. The ``--list-skills`` flag validates discovery without
-starting the transport, while additional sanity checks can be run with a short
-script that invokes the generated tool functions directly.
+Manual smoke tests rely on the sample fixture in ``tmp/examples`` created
+by the project checklist. The ``--list-skills`` flag validates discovery
+without starting the transport, while additional sanity checks can be run
+with a short script that invokes the generated tool functions directly.
 
 Security note: referenced scripts execute from copies of the skill directory in
 fresh temporary folders with a restricted environment (only ``PATH``/locale
@@ -110,7 +110,8 @@ class Skill:
         if match:
             return match.group(2).lstrip()
         raise SkillValidationError(
-            f"Skill {self.slug} is missing YAML front matter and cannot be served."
+            f"Skill {self.slug} is missing YAML front matter "
+            "and cannot be served."
         )
 
 
@@ -135,19 +136,26 @@ def parse_skill_md(path: Path) -> tuple[SkillMetadata, str]:
     try:
         data = yaml.safe_load(front_matter) or {}
     except yaml.YAMLError as exc:  # pragma: no cover - defensive
-        raise SkillValidationError(f"Unable to parse YAML in {path}: {exc}") from exc
+        raise SkillValidationError(
+            f"Unable to parse YAML in {path}: {exc}"
+        ) from exc
 
     if not isinstance(data, Mapping):
         raise SkillValidationError(
-            f"Front matter in {path} must define a mapping, not {type(data).__name__}."
+            f"Front matter in {path} must define a mapping, "
+            f"not {type(data).__name__}."
         )
 
     name = str(data.get("name", "")).strip()
     description = str(data.get("description", "")).strip()
     if not name:
-        raise SkillValidationError(f"Front matter in {path} is missing 'name'.")
+        raise SkillValidationError(
+            f"Front matter in {path} is missing 'name'."
+        )
     if not description:
-        raise SkillValidationError(f"Front matter in {path} is missing 'description'.")
+        raise SkillValidationError(
+            f"Front matter in {path} is missing 'description'."
+        )
 
     allowed = data.get("allowed-tools") or data.get("allowed_tools") or []
     if isinstance(allowed, str):
@@ -155,7 +163,9 @@ def parse_skill_md(path: Path) -> tuple[SkillMetadata, str]:
             part.strip() for part in allowed.split(",") if part.strip()
         )
     elif isinstance(allowed, Iterable):
-        allowed_list = tuple(str(item).strip() for item in allowed if str(item).strip())
+        allowed_list = tuple(
+            str(item).strip() for item in allowed if str(item).strip()
+        )
     else:
         allowed_list = ()
 
@@ -163,13 +173,21 @@ def parse_skill_md(path: Path) -> tuple[SkillMetadata, str]:
         key: value
         for key, value in data.items()
         if key
-        not in {"name", "description", "license", "allowed-tools", "allowed_tools"}
+        not in {
+            "name",
+            "description",
+            "license",
+            "allowed-tools",
+            "allowed_tools",
+        }
     }
 
     metadata = SkillMetadata(
         name=name,
         description=description,
-        license=(str(data["license"]).strip() if data.get("license") else None),
+        license=(
+            str(data["license"]).strip() if data.get("license") else None
+        ),
         allowed_tools=allowed_list,
         extra=extra,
     )
@@ -191,7 +209,8 @@ class SkillRegistry:
     def load(self) -> None:
         if not self.root.exists() or not self.root.is_dir():
             raise SkillError(
-                f"Skills root {self.root} does not exist or is not a directory."
+                f"Skills root {self.root} does not exist "
+                "or is not a directory."
             )
 
         LOGGER.info("Discovering skills in %s", self.root)
@@ -215,12 +234,17 @@ class SkillRegistry:
 
             slug = slugify(metadata.name)
             if slug in self._skills_by_slug:
-                LOGGER.error("Duplicate skill slug '%s'; skipping %s", slug, child)
+                LOGGER.error(
+                    "Duplicate skill slug '%s'; skipping %s",
+                    slug,
+                    child,
+                )
                 continue
 
             if metadata.name in self._skills_by_name:
                 LOGGER.warning(
-                    "Duplicate skill name '%s' found in %s; only first occurrence is kept",
+                    "Duplicate skill name '%s' found in %s; "
+                    "only first occurrence is kept",
                     metadata.name,
                     child,
                 )
@@ -274,7 +298,9 @@ def resolve_within(base: Path, relative: str) -> Path:
     try:
         candidate.relative_to(base_resolved)
     except ValueError as exc:
-        raise SkillError(f"Path '{relative}' escapes skill directory {base}.") from exc
+        raise SkillError(
+            f"Path '{relative}' escapes skill directory {base}."
+        ) from exc
     return candidate
 
 
@@ -290,7 +316,10 @@ def encode_output(data: bytes) -> dict[str, Any]:
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
-        return {"encoding": "base64", "content": base64.b64encode(data).decode("ascii")}
+        return {
+            "encoding": "base64",
+            "content": base64.b64encode(data).decode("ascii"),
+        }
     return {"encoding": "text", "content": text}
 
 
@@ -313,7 +342,8 @@ def resolve_command(script_path: Path) -> list[str]:
         return [str(script_path)]
 
     raise SkillExecutionError(
-        f"Cannot determine interpreter for {script_path}. Add a shebang or known extension."
+        f"Cannot determine interpreter for {script_path}. "
+        "Add a shebang or known extension."
     )
 
 
@@ -350,7 +380,9 @@ async def run_script(
 
         args = payload.get("args", [])
         if isinstance(args, (str, bytes)):
-            raise SkillExecutionError("'args' must be a sequence of argument strings.")
+            raise SkillExecutionError(
+                "'args' must be a sequence of argument strings."
+            )
         if not isinstance(args, Iterable):
             raise SkillExecutionError("'args' must be an iterable of strings.")
         args_list = [str(item) for item in args]
@@ -364,7 +396,10 @@ async def run_script(
         elif isinstance(stdin_payload, Mapping):
             stdin_content = stdin_payload.get("content", "")
             stdin_encoding = stdin_payload.get("encoding", "text")
-            stdin_data = decode_payload_content(str(stdin_content), str(stdin_encoding))
+            stdin_data = decode_payload_content(
+                str(stdin_content),
+                str(stdin_encoding),
+            )
         else:
             raise SkillExecutionError(
                 "'stdin' must be text or {content, encoding} mapping."
@@ -401,7 +436,11 @@ async def run_script(
         proc = await asyncio.create_subprocess_exec(
             *exec_command,
             cwd=str(workdir),
-            env={key: value for key, value in env.items() if isinstance(value, str)},
+            env={
+                key: value
+                for key, value in env.items()
+                if isinstance(value, str)
+            },
             stdin=asyncio.subprocess.PIPE if stdin_data is not None else None,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -417,7 +456,8 @@ async def run_script(
             with contextlib.suppress(asyncio.CancelledError):
                 await proc.wait()
             raise SkillExecutionError(
-                f"Execution timed out after {timeout} seconds for {relative_path}."
+                "Execution timed out after "
+                f"{timeout} seconds for {relative_path}."
             ) from exc
 
         duration = asyncio.get_running_loop().time() - start_time
@@ -494,7 +534,9 @@ def register_skill_tool(
 
         try:
             if not task.strip():
-                raise SkillError("The 'task' parameter must be a non-empty string.")
+                raise SkillError(
+                    "The 'task' parameter must be a non-empty string."
+                )
 
             instructions = bound_skill.read_body()
             response: dict[str, Any] = {
@@ -522,41 +564,66 @@ def register_skill_tool(
                         {instructions}
                         """
                     ).strip(),
-                    "guidance": (
-                        "Share the `suggested_prompt` with your assistant or embed the"
-                        " `instructions` text directly alongside the task so the model"
-                        " can apply the skill as authored. If the instructions mention"
-                        " supporting files, call `ctx.read_resource` with one of the"
-                        " `available_resources` paths before handing data to the model."
-                    ),
+                    "guidance": textwrap.dedent(
+                        """\
+Share the `suggested_prompt` with your assistant or embed the
+`instructions` text directly alongside the task so the model can apply
+the skill as authored. If the instructions mention supporting files,
+call `ctx.read_resource` with one of the `available_resources` paths
+before handing data to the model.
+"""
+                    ).strip(),
                     "script_execution": {
-                        "call_instructions": (
-                            "Invoke this tool again with the `script` parameter set to a"
-                            " path relative to the skill root and optionally include"
-                            " `script_payload` (keys: args, env, files, stdin, workdir)."
-                        ),
+                        "call_instructions": textwrap.dedent(
+                            """\
+Invoke this tool again with the `script` parameter set to a path
+relative to the skill root and optionally include `script_payload`
+(keys: args, env, files, stdin, workdir).
+"""
+                        ).strip(),
                         "payload_fields": {
-                            "args": "List of strings forwarded as command arguments",
-                            "env": "Mapping of environment variables to merge with the default sandbox",
-                            "files": "Mapping of relative file paths to their contents (encoding + content)",
-                            "stdin": "String or bytes (base64) provided on standard input",
-                            "workdir": "Optional working directory relative to the copied skill root",
+                            "args": (
+                                "List of strings forwarded as command "
+                                "arguments"
+                            ),
+                            "env": (
+                                "Mapping of environment variables "
+                                "to merge with the default sandbox"
+                            ),
+                            "files": (
+                                "Mapping of relative file paths to their "
+                                "contents (encoding + content)"
+                            ),
+                            "stdin": (
+                                "String or bytes (base64) provided on "
+                                "standard input"
+                            ),
+                            "workdir": (
+                                "Optional working directory relative to the "
+                                "copied skill root"
+                            ),
                         },
-                        "available_resources": [str(path) for path in bound_skill.resources],
+                        "available_resources": [
+                            str(path) for path in bound_skill.resources
+                        ],
                     },
                 },
             }
 
             if script is not None:
                 if not script.strip():
-                    raise SkillError("Script path, if provided, must be a non-empty string.")
+                    raise SkillError(
+                        "Script path, if provided, must be a non-empty string."
+                    )
                 payload_mapping: Mapping[str, Any]
                 if script_payload is None:
                     payload_mapping = {}
                 elif isinstance(script_payload, Mapping):
                     payload_mapping = dict(script_payload)
                 else:
-                    raise SkillError("'script_payload' must be a mapping of script inputs.")
+                    raise SkillError(
+                        "'script_payload' must be a mapping of script inputs."
+                    )
 
                 effective_timeout = bound_timeout
                 if script_timeout is not None:
@@ -573,13 +640,18 @@ def register_skill_tool(
             return response
         except SkillError as exc:
             LOGGER.error(
-                "Skill %s invocation failed: %s", bound_skill.slug, exc, exc_info=True
+                "Skill %s invocation failed: %s",
+                bound_skill.slug,
+                exc,
+                exc_info=True,
             )
             raise ToolError(str(exc)) from exc
         finally:
             duration = asyncio.get_running_loop().time() - start
             LOGGER.info(
-                "Skill %s invocation completed in %.2fs", bound_skill.slug, duration
+                "Skill %s invocation completed in %.2fs",
+                bound_skill.slug,
+                duration,
             )
 
     return _skill_tool
@@ -600,9 +672,14 @@ def configure_logging(verbose: bool, log_to_file: bool) -> None:
         log_path = Path("/tmp/skillz.log")
         try:
             log_path.parent.mkdir(parents=True, exist_ok=True)
-            file_handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
+            file_handler = logging.FileHandler(
+                log_path, mode="w", encoding="utf-8"
+            )
         except OSError as exc:  # pragma: no cover - filesystem failure is rare
-            print(f"Failed to configure log file {log_path}: {exc}", file=sys.stderr)
+            print(
+                f"Failed to configure log file {log_path}: {exc}",
+                file=sys.stderr,
+            )
         else:
             file_handler.setLevel(logging.DEBUG)
             file_handler.setFormatter(logging.Formatter(log_format))
@@ -616,7 +693,9 @@ def configure_logging(verbose: bool, log_to_file: bool) -> None:
 
 
 def build_server(registry: SkillRegistry, *, timeout: float) -> FastMCP:
-    summary = ", ".join(skill.metadata.name for skill in registry.skills) or "No skills"
+    summary = ", ".join(
+        skill.metadata.name for skill in registry.skills
+    ) or "No skills"
     mcp = FastMCP(
         name=SERVER_NAME,
         version=SERVER_VERSION,
@@ -632,7 +711,11 @@ def list_skills(registry: SkillRegistry) -> None:
         print("No valid skills discovered.")
         return
     for skill in registry.skills:
-        print(f"- {skill.metadata.name} (slug: {skill.slug}) -> {skill.directory}")
+        print(
+            f"- {skill.metadata.name} (slug: {skill.slug}) -> ",
+            skill.directory,
+            sep="",
+        )
 
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
@@ -641,7 +724,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "skills_root",
         type=Path,
         nargs="?",
-        help=f"Directory containing skill folders (default: {DEFAULT_SKILLS_ROOT})",
+        help=(
+            "Directory containing skill folders "
+            f"(default: {DEFAULT_SKILLS_ROOT})"
+        ),
     )
     parser.add_argument(
         "--timeout",
@@ -656,13 +742,26 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Transport to use when running the server",
     )
     parser.add_argument(
-        "--host", default="127.0.0.1", help="Host for HTTP/SSE transports"
+        "--host",
+        default="127.0.0.1",
+        help="Host for HTTP/SSE transports",
     )
     parser.add_argument(
-        "--port", type=int, default=8000, help="Port for HTTP/SSE transports"
+        "--port",
+        type=int,
+        default=8000,
+        help="Port for HTTP/SSE transports",
     )
-    parser.add_argument("--path", default="/mcp", help="Path for HTTP transport")
-    parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
+    parser.add_argument(
+        "--path",
+        default="/mcp",
+        help="Path for HTTP transport",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable debug logging",
+    )
     parser.add_argument(
         "--log",
         action="store_true",

@@ -43,3 +43,10 @@ dev = [
 [tool.uv]
 package = true
 default-groups = ["dev"]
+
+[tool.ruff]
+line-length = 79
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "W", "F"]

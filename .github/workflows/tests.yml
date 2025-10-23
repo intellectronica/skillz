@@ -23,5 +23,7 @@ jobs:
           python-version: "3.14"
       - name: Sync dependencies
         run: uv sync
+      - name: Run Ruff
+        run: uv run ruff check
       - name: Run tests
         run: uv run pytest

@@ -5,7 +5,9 @@ import pytest
 from skillz import parse_args
 
 
-def test_parse_args_defaults_to_home_directory(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_parse_args_defaults_to_home_directory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake_home = Path("/tmp/fake-home")
     monkeypatch.setenv("HOME", str(fake_home))
 

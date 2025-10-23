@@ -1,16 +1,9 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#     "fastmcp>=2.2.5",
-#     "pyyaml>=6.0",
-# ]
-# ///
 """Skillz MCP server exposing local Anthropic-style skills via FastMCP.
 
 Usage examples::
 
-    uv run skillz.py /path/to/skills --verbose
-    uv run skillz.py tmp/examples --list-skills
+    uv run python -m skillz /path/to/skills --verbose
+    uv run python -m skillz tmp/examples --list-skills
 
 Manual smoke tests rely on the sample fixture in ``tmp/examples`` created by the
 project checklist. The ``--list-skills`` flag validates discovery without
@@ -53,13 +46,15 @@ import yaml
 from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
 
+from ._version import __version__
+
 
 LOGGER = logging.getLogger("skillz")
 FRONT_MATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)", re.DOTALL)
 SKILL_MARKDOWN = "SKILL.md"
 DEFAULT_TIMEOUT = 60.0
 SERVER_NAME = "Skillz MCP Server"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = __version__
 
 
 class SkillError(Exception):

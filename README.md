@@ -6,7 +6,7 @@
 
 ---
 
-`skillz.py` is a single‑file MCP server that exposes [Anthropic‑style skills](https://github.com/anthropics/skills) (directories with a `SKILL.md` that starts with YAML front‑matter) to any MCP client. It recursively discovers skills, registers one tool per skill, returns authored instructions and absolute file paths, and can optionally run a helper script from the skill in a temporary workspace.
+`skillz` is a Python package and CLI that exposes [Anthropic‑style skills](https://github.com/anthropics/skills) (directories with a `SKILL.md` that starts with YAML front‑matter) to any MCP client. It recursively discovers skills, registers one tool per skill, returns authored instructions and absolute file paths, and can optionally run a helper script from the skill in a temporary workspace. Until the package is published to PyPI you can run it directly from a local checkout via `uv run python -m skillz`.
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@
 2. Run the server with the directory path:
 
    ```bash
-   uv run skillz.py /path/to/skills --verbose
+   uv run python -m skillz /path/to/skills --verbose
    ```
 
    By default the server listens over `stdio`. Pass `--transport http` or
@@ -29,8 +29,35 @@
 3. Use `--list-skills` to validate parsing without starting the transport:
 
    ```bash
-   uv run skillz.py /path/to/skills --list-skills
+   uv run python -m skillz /path/to/skills --list-skills
    ```
+
+## Local development workflow
+
+- Install [uv](https://github.com/astral-sh/uv) and Python 3.12+.
+- Sync an isolated environment with all runtime and developer dependencies:
+
+  ```bash
+  uv sync
+  ```
+
+- Run the test suite:
+
+  ```bash
+  uv run pytest
+  ```
+
+- Launch the CLI without leaving the project directory:
+
+  ```bash
+  uv run python -m skillz /path/to/skills --list-skills
+  ```
+
+## Packaging status
+
+- The repository now ships a `pyproject.toml`, `src/skillz/` package layout, and `uv.lock` for reproducible builds.
+- Console entry point `skillz` resolves to `python -m skillz` when installed as a package.
+- Publishing to TestPyPI/PyPI is not yet enabled; follow the release checklist in `tmp/plan.md` before attempting to distribute builds.
 
 ## Discovery and tool registration
 

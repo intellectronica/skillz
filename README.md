@@ -57,7 +57,7 @@
 
 - The repository now ships a `pyproject.toml`, `src/skillz/` package layout, and `uv.lock` for reproducible builds.
 - Console entry point `skillz` resolves to `python -m skillz` when installed as a package.
-- GitHub Actions workflow `.github/workflows/publish.yml` builds/test on every `v*` tag and publishes via PyPI trusted publisher once the `pypi` environment is approved in project settings.
+- GitHub Actions workflow `.github/workflows/publish.yml` builds/tests and, on published GitHub Releases, publishes via PyPI trusted publisher once the `pypi` environment is approved in project settings.
 
 ## Discovery and tool registration
 

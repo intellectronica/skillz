@@ -11,7 +11,7 @@
 ## Features
 
 - Recursively discovers every `SKILL.md` beneath the provided skills root (default: `~/.skillz`) and creates one MCP tool per skill slug (derived from the skill `name`).
-- Tool calls return the skill instructions, metadata, and an absolute path list for every file shipped with the skill so clients can fetch resources directly or via `ctx.read_resource`.
+- Tool calls return the skill instructions, metadata, and resource metadata (absolute paths, relative paths, deterministic `resource://skillz/...` URIs, and a `runnable` flag) so clients can fetch supporting files directly or via `ctx.read_resource` and easily spot helper scripts.
 - Optional `script` execution copies the skill to a temp directory, applies file/env/stdin payloads, runs the script with the right interpreter, and returns stdout/stderr/output metadata.
 - Supports `stdio`, `http`, and `sse` transports through FastMCP so you can connect the server to a variety of MCP clients.
 
@@ -68,9 +68,11 @@ Each tool invocation expects a non-empty `task` string and responds with:
 - `skill`: the slug derived from the skill `name`.
 - `task`: echo of the task that triggered the tool call.
 - `metadata`: name, description, license (if provided), allowed tools, and any extra front-matter fields.
-- `resources`: absolute paths to the `SKILL.md` and every other file shipped with the skill.
+- `resources`: metadata entries describing every file shipped with the skill. Each entry includes the absolute `path`, a `relative_path` within the skill directory, a deterministic `resource://skillz/{slug}/…` `uri` that can be fetched via `ctx.read_resource`, and a boolean `runnable` hint that marks which assets can be executed.
 - `instructions`: the Markdown body from `SKILL.md`.
-- `usage`: a convenience block containing a suggested MCP prompt, integration guidance, and script execution instructions.
+- `usage`: a convenience block containing a suggested MCP prompt, integration guidance, and script execution instructions. The `script_execution.available_scripts` list calls out runnable helpers (relative paths, absolute paths, and URIs) while `script_execution.available_resources` continues to return all URIs followed by absolute paths for backwards compatibility.
+
+Script invocations reject non-runnable files with a helpful error that points back to the corresponding `ctx.read_resource` URI so agents learn to read those resources instead of treating them like executables.
 
 Provide `script` to run a helper program bundled with the skill. The optional
 `script_payload` mapping supports:
@@ -119,7 +121,7 @@ exit code, `stdout`, `stderr`, and `duration_seconds`.
 - One MCP tool is registered per skill. Tool name = the slug of `name` (e.g., `algorithmic-art`).
 - Tool description = the `description` from front‑matter (no extra metadata included).
 
-_Note: Skillz responds with absolute paths for every resource. FastMCP clients can call `ctx.read_resource` to stream the file contents or read them directly from disk when running locally._
+_Note: Skillz responds with deterministic `resource://skillz/...` URIs and absolute paths for every resource. FastMCP clients can call `ctx.read_resource` with the URI to stream the file contents or read them directly from disk when running locally._
 
 ## Security & Safety Notice
 

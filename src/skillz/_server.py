@@ -40,7 +40,9 @@ from typing import (
     Mapping,
     MutableMapping,
     Optional,
+    TypedDict,
 )
+from urllib.parse import quote
 
 import yaml
 from fastmcp import Context, FastMCP
@@ -113,6 +115,15 @@ class Skill:
             f"Skill {self.slug} is missing YAML front matter "
             "and cannot be served."
         )
+
+
+class SkillResourceMetadata(TypedDict):
+    """Metadata describing a registered skill resource."""
+
+    path: str
+    relative_path: str
+    uri: str
+    runnable: bool
 
 
 def slugify(value: str) -> str:
@@ -497,6 +508,76 @@ class TemporaryWorkspace:
         return destination
 
 
+def _build_resource_uri(skill: Skill, relative_path: Path) -> str:
+    encoded_slug = quote(skill.slug, safe="")
+    encoded_parts = [quote(part, safe="") for part in relative_path.parts]
+    path_suffix = "/".join(encoded_parts)
+    if path_suffix:
+        return f"resource://skillz/{encoded_slug}/{path_suffix}"
+    return f"resource://skillz/{encoded_slug}"
+
+
+def _is_probably_script(path: Path) -> bool:
+    """Return True when a resource looks executable."""
+
+    try:
+        resolve_command(path)
+    except (OSError, SkillExecutionError, SkillError):
+        return False
+    return True
+
+
+def register_skill_resources(
+    mcp: FastMCP, skill: Skill
+) -> tuple[SkillResourceMetadata, ...]:
+    """Register FastMCP resources for each file in a skill."""
+
+    metadata: list[SkillResourceMetadata] = []
+    for resource_path in skill.resources:
+        try:
+            relative_path = resource_path.relative_to(skill.directory)
+        except ValueError:  # pragma: no cover - defensive safeguard
+            relative_path = Path(resource_path.name)
+
+        relative_display = relative_path.as_posix()
+        uri = _build_resource_uri(skill, relative_path)
+        is_instructions_file = resource_path == skill.instructions_path
+        runnable = False
+        if not is_instructions_file:
+            runnable = _is_probably_script(resource_path)
+
+        def _make_resource_reader(path: Path) -> Callable[[], str | bytes]:
+            def _read_resource() -> str | bytes:
+                try:
+                    data = path.read_bytes()
+                except OSError as exc:  # pragma: no cover
+                    raise SkillError(
+                        f"Failed to read resource '{path}': {exc}"
+                    ) from exc
+
+                try:
+                    return data.decode("utf-8")
+                except UnicodeDecodeError:
+                    return data
+
+            return _read_resource
+
+        mcp.resource(uri, name=f"{skill.slug}:{relative_display}")(
+            _make_resource_reader(resource_path)
+        )
+
+        metadata.append(
+            {
+                "path": str(resource_path),
+                "relative_path": relative_display,
+                "uri": uri,
+                "runnable": runnable,
+            }
+        )
+
+    return tuple(metadata)
+
+
 def _format_tool_description(skill: Skill) -> str:
     """Return the concise skill description for discovery responses."""
 
@@ -509,12 +590,17 @@ def _format_tool_description(skill: Skill) -> str:
 
 
 def register_skill_tool(
-    mcp: FastMCP, skill: Skill, *, timeout: float
+    mcp: FastMCP,
+    skill: Skill,
+    *,
+    timeout: float,
+    resources: tuple[SkillResourceMetadata, ...],
 ) -> Callable[..., Awaitable[Mapping[str, Any]]]:
     tool_name = skill.slug
     description = _format_tool_description(skill)
     bound_skill = skill
     bound_timeout = timeout
+    bound_resources = resources
 
     @mcp.tool(name=tool_name, description=description)
     async def _skill_tool(  # type: ignore[unused-ignore]
@@ -539,6 +625,27 @@ def register_skill_tool(
                 )
 
             instructions = bound_skill.read_body()
+            resource_entries = [
+                {
+                    "path": entry["path"],
+                    "relative_path": entry["relative_path"],
+                    "uri": entry["uri"],
+                    "runnable": entry["runnable"],
+                }
+                for entry in bound_resources
+            ]
+            resource_uris = [entry["uri"] for entry in resource_entries]
+            legacy_paths = [entry["path"] for entry in resource_entries]
+            script_entries = [
+                {
+                    "path": entry["path"],
+                    "relative_path": entry["relative_path"],
+                    "uri": entry["uri"],
+                }
+                for entry in resource_entries
+                if entry["runnable"]
+            ]
+
             response: dict[str, Any] = {
                 "skill": bound_skill.slug,
                 "task": task,
@@ -549,7 +656,7 @@ def register_skill_tool(
                     "allowed_tools": list(bound_skill.metadata.allowed_tools),
                     "extra": bound_skill.metadata.extra,
                 },
-                "resources": [str(path) for path in bound_skill.resources],
+                "resources": resource_entries,
                 "instructions": instructions,
                 "usage": {
                     "suggested_prompt": textwrap.dedent(
@@ -569,7 +676,7 @@ def register_skill_tool(
 Share the `suggested_prompt` with your assistant or embed the
 `instructions` text directly alongside the task so the model can apply
 the skill as authored. If the instructions mention supporting files,
-call `ctx.read_resource` with one of the `available_resources` paths
+call `ctx.read_resource` with one of the URIs in `available_resources`
 before handing data to the model.
 """
                     ).strip(),
@@ -577,8 +684,9 @@ before handing data to the model.
                         "call_instructions": textwrap.dedent(
                             """\
 Invoke this tool again with the `script` parameter set to a path
-relative to the skill root and optionally include `script_payload`
-(keys: args, env, files, stdin, workdir).
+relative to the skill root (choose from `available_scripts`) and
+optionally include `script_payload` (keys: args, env, files, stdin,
+workdir).
 """
                         ).strip(),
                         "payload_fields": {
@@ -603,8 +711,10 @@ relative to the skill root and optionally include `script_payload`
                                 "copied skill root"
                             ),
                         },
+                        "available_scripts": script_entries,
                         "available_resources": [
-                            str(path) for path in bound_skill.resources
+                            *resource_uris,
+                            *legacy_paths,
                         ],
                     },
                 },
@@ -615,6 +725,31 @@ relative to the skill root and optionally include `script_payload`
                     raise SkillError(
                         "Script path, if provided, must be a non-empty string."
                     )
+                normalized_script = script.replace("\\", "/")
+                script_path = Path(normalized_script)
+                if script_path.is_absolute():
+                    raise SkillError(
+                        "Script path must be relative to the skill directory."
+                    )
+                normalized_relative = script_path.as_posix()
+                matching_resource = next(
+                    (
+                        entry
+                        for entry in resource_entries
+                        if entry["relative_path"] == normalized_relative
+                    ),
+                    None,
+                )
+                if matching_resource and not matching_resource["runnable"]:
+                    raise SkillError(
+                        "'{relative}' is a resource, not an executable. Use "
+                        "ctx.read_resource('{uri}') to read it instead."
+                        .format(
+                            relative=matching_resource["relative_path"],
+                            uri=matching_resource["uri"],
+                        )
+                    )
+                script = normalized_relative
                 payload_mapping: Mapping[str, Any]
                 if script_payload is None:
                     payload_mapping = {}
@@ -702,7 +837,13 @@ def build_server(registry: SkillRegistry, *, timeout: float) -> FastMCP:
         instructions=f"Loaded skills: {summary}",
     )
     for skill in registry.skills:
-        register_skill_tool(mcp, skill, timeout=timeout)
+        resource_metadata = register_skill_resources(mcp, skill)
+        register_skill_tool(
+            mcp,
+            skill,
+            timeout=timeout,
+            resources=resource_metadata,
+        )
     return mcp
 
 

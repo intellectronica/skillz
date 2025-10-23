@@ -6,7 +6,7 @@
 
 ---
 
-`skillz` is a Python package and CLI that exposes [Anthropic‑style skills](https://github.com/anthropics/skills) (directories with a `SKILL.md` that starts with YAML front‑matter) to any MCP client. It recursively discovers skills, registers one tool per skill, returns authored instructions and absolute file paths, and can optionally run a helper script from the skill in a temporary workspace. Until the package is published to PyPI you can run it directly from a local checkout via `uv run python -m skillz`.
+`skillz` is a Python package and CLI that exposes [Anthropic‑style skills](https://github.com/anthropics/skills) (directories with a `SKILL.md` that starts with YAML front‑matter) to any MCP client. It recursively discovers skills, registers one tool per skill, returns authored instructions and absolute file paths, and can optionally run a helper script from the skill in a temporary workspace. Now that the package is on PyPI you can run it anywhere with `uvx skillz`.
 
 ## Prerequisites
 
@@ -17,10 +17,10 @@
 
 1. Populate a directory with skills following Anthropic’s format
    (`SKILL.md` + optional resources).
-2. Run the server with the directory path:
+2. Run the server with the directory path (downloads and caches the latest PyPI release automatically):
 
    ```bash
-   uv run python -m skillz /path/to/skills --verbose
+   uvx skillz /path/to/skills --verbose
    ```
 
    By default the server listens over `stdio`. Pass `--transport http` or
@@ -29,13 +29,13 @@
 3. Use `--list-skills` to validate parsing without starting the transport:
 
    ```bash
-   uv run python -m skillz /path/to/skills --list-skills
+   uvx skillz /path/to/skills --list-skills
    ```
 
 ## Local development workflow
 
 - Install [uv](https://github.com/astral-sh/uv) and Python 3.12+.
-- Sync an isolated environment with all runtime and developer dependencies:
+- Sync an isolated environment with all runtime and developer dependencies (only needed when developing locally in the repo):
 
   ```bash
   uv sync
@@ -47,7 +47,7 @@
   uv run pytest
   ```
 
-- Launch the CLI without leaving the project directory:
+- Launch the CLI against your local checkout while iterating:
 
   ```bash
   uv run python -m skillz /path/to/skills --list-skills

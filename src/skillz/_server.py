@@ -120,7 +120,6 @@ class Skill:
 class SkillResourceMetadata(TypedDict):
     """Metadata describing a registered skill resource."""
 
-    path: str
     relative_path: str
     uri: str
     runnable: bool
@@ -568,7 +567,6 @@ def register_skill_resources(
 
         metadata.append(
             {
-                "path": str(resource_path),
                 "relative_path": relative_display,
                 "uri": uri,
                 "runnable": runnable,
@@ -627,18 +625,14 @@ def register_skill_tool(
             instructions = bound_skill.read_body()
             resource_entries = [
                 {
-                    "path": entry["path"],
                     "relative_path": entry["relative_path"],
                     "uri": entry["uri"],
                     "runnable": entry["runnable"],
                 }
                 for entry in bound_resources
             ]
-            resource_uris = [entry["uri"] for entry in resource_entries]
-            legacy_paths = [entry["path"] for entry in resource_entries]
             script_entries = [
                 {
-                    "path": entry["path"],
                     "relative_path": entry["relative_path"],
                     "uri": entry["uri"],
                 }
@@ -675,18 +669,24 @@ def register_skill_tool(
                         """\
 Share the `suggested_prompt` with your assistant or embed the
 `instructions` text directly alongside the task so the model can apply
-the skill as authored. If the instructions mention supporting files,
-call `ctx.read_resource` with one of the URIs in `available_resources`
-before handing data to the model.
+the skill as authored.
+
+IMPORTANT: All skill resources MUST be accessed via the MCP protocol.
+If the instructions mention supporting files, use `ctx.read_resource(uri)`
+with one of the URIs from `available_resources` to read them. Do not
+attempt to access resources via filesystem paths.
 """
                     ).strip(),
                     "script_execution": {
                         "call_instructions": textwrap.dedent(
                             """\
-Invoke this tool again with the `script` parameter set to a path
-relative to the skill root (choose from `available_scripts`) and
-optionally include `script_payload` (keys: args, env, files, stdin,
-workdir).
+Invoke this tool again with the `script` parameter set to a relative
+path from the skill root (use the `relative_path` from
+`available_scripts`). Optionally include `script_payload` (keys: args,
+env, files, stdin, workdir).
+
+Use `ctx.read_resource(uri)` to access any non-script resources before
+invoking scripts.
 """
                         ).strip(),
                         "payload_fields": {
@@ -713,8 +713,7 @@ workdir).
                         },
                         "available_scripts": script_entries,
                         "available_resources": [
-                            *resource_uris,
-                            *legacy_paths,
+                            entry["uri"] for entry in resource_entries
                         ],
                     },
                 },

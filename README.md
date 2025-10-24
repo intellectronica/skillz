@@ -17,20 +17,20 @@ To run the MCP server in your agent, use the following config (or equivalent):
 {
   "skillz": {
     "command": "uvx",
-    "args": ["skillz"]
+    "args": ["skillz@latest"]
   }
 }
 ```
 
 with the skills residing at `~/.skillz`
 
-or
+_or_
 
 ```json
 {
   "skillz": {
     "command": "uvx",
-    "args": ["skillz", "/path/to/skills/direcotry"]
+    "args": ["skillz@latest", "/path/to/skills/direcotry"]
   }
 }
 ```

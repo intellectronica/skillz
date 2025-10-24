@@ -86,7 +86,6 @@ async def test_registers_skill_resources(tmp_path: Path) -> None:
         )
         expected_entries.append(
             {
-                "path": str(resource_path),
                 "relative_path": relative.as_posix(),
                 "uri": uri,
                 "runnable": runnable,
@@ -99,9 +98,16 @@ async def test_registers_skill_resources(tmp_path: Path) -> None:
 
     for entry in expected_entries:
         uri = entry["uri"]
-        path = Path(entry["path"])
+        # Verify we can read the resource via URI
         content = await server._resource_manager.read_resource(uri)
-        file_bytes = path.read_bytes()
+        # Find the original path from skill.resources for validation
+        relative = Path(entry["relative_path"])
+        resource_path = next(
+            p
+            for p in skill.resources
+            if p.relative_to(skill.directory) == relative
+        )
+        file_bytes = resource_path.read_bytes()
         try:
             file_text = file_bytes.decode("utf-8")
         except UnicodeDecodeError:
@@ -124,7 +130,6 @@ async def test_registers_skill_resources(tmp_path: Path) -> None:
         ]
         assert available_scripts == [
             {
-                "path": entry["path"],
                 "relative_path": entry["relative_path"],
                 "uri": entry["uri"],
             }
@@ -133,12 +138,13 @@ async def test_registers_skill_resources(tmp_path: Path) -> None:
         ]
 
         available = payload["usage"]["script_execution"]["available_resources"]
-        assert available[: len(expected_entries)] == [
-            entry["uri"] for entry in expected_entries
-        ]
-        assert available[len(expected_entries) :] == [
-            entry["path"] for entry in expected_entries
-        ]
+        assert available == [entry["uri"] for entry in expected_entries]
+
+        # Regression test: ensure no absolute paths leak into the payload
+        import json
+
+        payload_json = json.dumps(payload)
+        assert '"path"' not in payload_json or "relative_path" in payload_json
 
 
 @pytest.mark.asyncio

@@ -14,7 +14,6 @@ def test_parse_args_defaults_to_home_directory(
     args = parse_args([])
 
     assert args.skills_root == fake_home / ".skillz"
-    assert args.timeout == 60.0
     assert args.transport == "stdio"
     assert args.list_skills is False
 
@@ -23,7 +22,6 @@ def test_parse_args_custom_root(tmp_path: Path) -> None:
     args = parse_args([str(tmp_path)])
 
     assert args.skills_root == Path(tmp_path)
-    assert args.timeout == 60.0
     assert args.transport == "stdio"
     assert args.list_skills is False
 
@@ -32,8 +30,6 @@ def test_parse_args_overrides(tmp_path: Path) -> None:
     args = parse_args(
         [
             str(tmp_path),
-            "--timeout",
-            "5",
             "--transport",
             "http",
             "--host",
@@ -46,7 +42,6 @@ def test_parse_args_overrides(tmp_path: Path) -> None:
         ]
     )
 
-    assert args.timeout == 5.0
     assert args.transport == "http"
     assert args.host == "0.0.0.0"
     assert args.port == 9000

@@ -10,24 +10,15 @@ by the project checklist. The ``--list-skills`` flag validates discovery
 without starting the transport, while additional sanity checks can be run
 with a short script that invokes the generated tool functions directly.
 
-Security note: referenced scripts execute from copies of the skill directory in
-fresh temporary folders with a restricted environment (only ``PATH``/locale
-variables plus any explicit overrides), which helps contain side effects.
+Skills provide instructions and resources via MCP. Clients are responsible
+for reading resources (including any scripts) and executing them if needed.
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
-import base64
-import contextlib
 import logging
-import os
 import re
-import shlex
-import shutil
-import sys
-import tempfile
 import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,7 +29,6 @@ from typing import (
     Dict,
     Iterable,
     Mapping,
-    MutableMapping,
     Optional,
     TypedDict,
 )
@@ -54,7 +44,6 @@ from ._version import __version__
 LOGGER = logging.getLogger("skillz")
 FRONT_MATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*)", re.DOTALL)
 SKILL_MARKDOWN = "SKILL.md"
-DEFAULT_TIMEOUT = 60.0
 DEFAULT_SKILLS_ROOT = Path("~/.skillz")
 SERVER_NAME = "Skillz MCP Server"
 SERVER_VERSION = __version__
@@ -75,11 +64,6 @@ class SkillValidationError(SkillError):
         super().__init__(message, code="validation_error")
 
 
-class SkillExecutionError(SkillError):
-    """Raised when a skill tool execution fails."""
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message, code="execution_error")
 
 
 @dataclass(slots=True)
@@ -122,7 +106,6 @@ class SkillResourceMetadata(TypedDict):
 
     relative_path: str
     uri: str
-    runnable: bool
 
 
 def slugify(value: str) -> str:
@@ -300,211 +283,6 @@ class SkillRegistry:
             raise SkillError(f"Unknown skill '{slug}'") from exc
 
 
-def resolve_within(base: Path, relative: str) -> Path:
-    """Resolve a relative path within base, preventing path traversal."""
-
-    base_resolved = base.resolve()
-    candidate = (base_resolved / relative).resolve()
-    try:
-        candidate.relative_to(base_resolved)
-    except ValueError as exc:
-        raise SkillError(
-            f"Path '{relative}' escapes skill directory {base}."
-        ) from exc
-    return candidate
-
-
-def decode_payload_content(content: str, encoding: str) -> bytes:
-    if encoding == "text":
-        return content.encode("utf-8")
-    if encoding == "base64":
-        return base64.b64decode(content)
-    raise SkillError(f"Unsupported encoding '{encoding}'.")
-
-
-def encode_output(data: bytes) -> dict[str, Any]:
-    try:
-        text = data.decode("utf-8")
-    except UnicodeDecodeError:
-        return {
-            "encoding": "base64",
-            "content": base64.b64encode(data).decode("ascii"),
-        }
-    return {"encoding": "text", "content": text}
-
-
-def resolve_command(script_path: Path) -> list[str]:
-    with script_path.open("r", encoding="utf-8", errors="ignore") as handle:
-        first_line = handle.readline().strip()
-    if first_line.startswith("#!"):
-        return shlex.split(first_line[2:].strip())
-
-    ext = script_path.suffix.lower()
-    if ext == ".py":
-        return [sys.executable]
-    if ext in {".sh", ".bash"}:
-        return ["bash"]
-    if ext == ".js":
-        return ["node"]
-    if ext == ".ps1":
-        return ["pwsh" if shutil.which("pwsh") else "powershell"]
-    if os.access(script_path, os.X_OK):
-        return [str(script_path)]
-
-    raise SkillExecutionError(
-        f"Cannot determine interpreter for {script_path}. "
-        "Add a shebang or known extension."
-    )
-
-
-async def run_script(
-    skill: Skill,
-    relative_path: str,
-    payload: Optional[Mapping[str, Any]],
-    timeout: float,
-) -> dict[str, Any]:
-    payload = payload or {}
-    skill_dir = skill.directory
-    source_path = resolve_within(skill_dir, relative_path)
-    if not source_path.exists():
-        raise SkillExecutionError(
-            f"Script '{relative_path}' not found for skill {skill.slug}."
-        )
-
-    with TemporaryWorkspace(skill_dir) as workspace:
-        copied_path = workspace.copy_skill_contents()
-        rel_target = resolve_within(copied_path, relative_path)
-
-        files_payload = payload.get("files", [])
-        for entry in files_payload:
-            rel = entry.get("path")
-            content = entry.get("content")
-            encoding = entry.get("encoding", "text")
-            if not rel or content is None:
-                raise SkillExecutionError(
-                    "Each file entry must include 'path' and 'content'."
-                )
-            dest = resolve_within(copied_path, rel)
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_bytes(decode_payload_content(content, encoding))
-
-        args = payload.get("args", [])
-        if isinstance(args, (str, bytes)):
-            raise SkillExecutionError(
-                "'args' must be a sequence of argument strings."
-            )
-        if not isinstance(args, Iterable):
-            raise SkillExecutionError("'args' must be an iterable of strings.")
-        args_list = [str(item) for item in args]
-
-        stdin_payload = payload.get("stdin")
-        stdin_data: Optional[bytes]
-        if stdin_payload is None:
-            stdin_data = None
-        elif isinstance(stdin_payload, str):
-            stdin_data = stdin_payload.encode("utf-8")
-        elif isinstance(stdin_payload, Mapping):
-            stdin_content = stdin_payload.get("content", "")
-            stdin_encoding = stdin_payload.get("encoding", "text")
-            stdin_data = decode_payload_content(
-                str(stdin_content),
-                str(stdin_encoding),
-            )
-        else:
-            raise SkillExecutionError(
-                "'stdin' must be text or {content, encoding} mapping."
-            )
-
-        env_payload = payload.get("env", {})
-        if not isinstance(env_payload, Mapping):
-            raise SkillExecutionError(
-                "'env' must be a mapping of environment variables."
-            )
-
-        env: MutableMapping[str, str] = {
-            "PATH": os.environ.get("PATH", ""),
-        }
-        for key in ("LANG", "LC_ALL", "PYTHONPATH"):
-            if key in os.environ:
-                env[key] = os.environ[key]
-        for key, value in env_payload.items():
-            env[str(key)] = str(value)
-
-        cwd_relative = payload.get("workdir")
-        if cwd_relative:
-            workdir = resolve_within(copied_path, str(cwd_relative))
-        else:
-            workdir = rel_target.parent
-
-        command = resolve_command(rel_target)
-        if command and command[0] != str(rel_target):
-            exec_command = [*command, str(rel_target), *args_list]
-        else:
-            exec_command = command if command else [str(rel_target)]
-            exec_command.extend(args_list)
-
-        proc = await asyncio.create_subprocess_exec(
-            *exec_command,
-            cwd=str(workdir),
-            env={
-                key: value
-                for key, value in env.items()
-                if isinstance(value, str)
-            },
-            stdin=asyncio.subprocess.PIPE if stdin_data is not None else None,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-        start_time = asyncio.get_running_loop().time()
-        try:
-            stdout_data, stderr_data = await asyncio.wait_for(
-                proc.communicate(stdin_data), timeout=timeout
-            )
-        except asyncio.TimeoutError as exc:
-            proc.kill()
-            with contextlib.suppress(asyncio.CancelledError):
-                await proc.wait()
-            raise SkillExecutionError(
-                "Execution timed out after "
-                f"{timeout} seconds for {relative_path}."
-            ) from exc
-
-        duration = asyncio.get_running_loop().time() - start_time
-
-    return {
-        "command": exec_command,
-        "cwd": str(workdir),
-        "returncode": proc.returncode,
-        "stdout": encode_output(stdout_data),
-        "stderr": encode_output(stderr_data),
-        "duration_seconds": duration,
-    }
-
-
-class TemporaryWorkspace:
-    """Context manager that copies skill contents into a temp directory."""
-
-    def __init__(self, source_dir: Path) -> None:
-        self.source_dir = source_dir
-        self._tmpdir: Optional[tempfile.TemporaryDirectory[str]] = None
-
-    def __enter__(self) -> "TemporaryWorkspace":
-        self._tmpdir = tempfile.TemporaryDirectory(prefix="skillz-")
-        return self
-
-    def __exit__(self, exc_type, exc, tb) -> None:
-        if self._tmpdir is not None:
-            self._tmpdir.cleanup()
-        self._tmpdir = None
-
-    def copy_skill_contents(self) -> Path:
-        if self._tmpdir is None:  # pragma: no cover - defensive
-            raise RuntimeError("TemporaryWorkspace not entered")
-
-        destination = Path(self._tmpdir.name) / self.source_dir.name
-        shutil.copytree(self.source_dir, destination, dirs_exist_ok=True)
-        return destination
 
 
 def _build_resource_uri(skill: Skill, relative_path: Path) -> str:
@@ -516,14 +294,6 @@ def _build_resource_uri(skill: Skill, relative_path: Path) -> str:
     return f"resource://skillz/{encoded_slug}"
 
 
-def _is_probably_script(path: Path) -> bool:
-    """Return True when a resource looks executable."""
-
-    try:
-        resolve_command(path)
-    except (OSError, SkillExecutionError, SkillError):
-        return False
-    return True
 
 
 def register_skill_resources(
@@ -540,10 +310,6 @@ def register_skill_resources(
 
         relative_display = relative_path.as_posix()
         uri = _build_resource_uri(skill, relative_path)
-        is_instructions_file = resource_path == skill.instructions_path
-        runnable = False
-        if not is_instructions_file:
-            runnable = _is_probably_script(resource_path)
 
         def _make_resource_reader(path: Path) -> Callable[[], str | bytes]:
             def _read_resource() -> str | bytes:
@@ -569,7 +335,6 @@ def register_skill_resources(
             {
                 "relative_path": relative_display,
                 "uri": uri,
-                "runnable": runnable,
             }
         )
 
@@ -591,29 +356,28 @@ def register_skill_tool(
     mcp: FastMCP,
     skill: Skill,
     *,
-    timeout: float,
     resources: tuple[SkillResourceMetadata, ...],
 ) -> Callable[..., Awaitable[Mapping[str, Any]]]:
+    """Register a tool that returns skill instructions and resource URIs.
+    
+    Clients are expected to read the instructions, then use ctx.read_resource(uri)
+    to access any resources they need (including scripts, which they can then
+    execute themselves if desired).
+    """
     tool_name = skill.slug
     description = _format_tool_description(skill)
     bound_skill = skill
-    bound_timeout = timeout
     bound_resources = resources
 
     @mcp.tool(name=tool_name, description=description)
     async def _skill_tool(  # type: ignore[unused-ignore]
         task: str,
-        script: Optional[str] = None,
-        script_payload: Optional[Mapping[str, Any]] = None,
-        script_timeout: Optional[float] = None,
         ctx: Optional[Context] = None,
     ) -> Mapping[str, Any]:
-        start = asyncio.get_running_loop().time()
         LOGGER.info(
-            "Skill %s tool invoked task=%s script=%s",
+            "Skill %s tool invoked task=%s",
             bound_skill.slug,
             task,
-            script,
         )
 
         try:
@@ -627,17 +391,8 @@ def register_skill_tool(
                 {
                     "relative_path": entry["relative_path"],
                     "uri": entry["uri"],
-                    "runnable": entry["runnable"],
                 }
                 for entry in bound_resources
-            ]
-            script_entries = [
-                {
-                    "relative_path": entry["relative_path"],
-                    "uri": entry["uri"],
-                }
-                for entry in resource_entries
-                if entry["runnable"]
             ]
 
             response: dict[str, Any] = {
@@ -652,124 +407,21 @@ def register_skill_tool(
                 },
                 "resources": resource_entries,
                 "instructions": instructions,
-                "usage": {
-                    "suggested_prompt": textwrap.dedent(
-                        f"""
-                        You are using the skill '{bound_skill.metadata.name}'.
-
-                        Task:
-                        {task}
-
-                        Follow the published skill instructions exactly:
-
-                        {instructions}
-                        """
-                    ).strip(),
-                    "guidance": textwrap.dedent(
-                        """\
-Share the `suggested_prompt` with your assistant or embed the
-`instructions` text directly alongside the task so the model can apply
-the skill as authored.
-
-IMPORTANT: All skill resources MUST be accessed via the MCP protocol.
-If the instructions mention supporting files, use `ctx.read_resource(uri)`
-with one of the URIs from `available_resources` to read them. Do not
-attempt to access resources via filesystem paths.
-"""
-                    ).strip(),
-                    "script_execution": {
-                        "call_instructions": textwrap.dedent(
-                            """\
-Invoke this tool again with the `script` parameter set to a relative
-path from the skill root (use the `relative_path` from
-`available_scripts`). Optionally include `script_payload` (keys: args,
-env, files, stdin, workdir).
-
-Use `ctx.read_resource(uri)` to access any non-script resources before
-invoking scripts.
-"""
-                        ).strip(),
-                        "payload_fields": {
-                            "args": (
-                                "List of strings forwarded as command "
-                                "arguments"
-                            ),
-                            "env": (
-                                "Mapping of environment variables "
-                                "to merge with the default sandbox"
-                            ),
-                            "files": (
-                                "Mapping of relative file paths to their "
-                                "contents (encoding + content)"
-                            ),
-                            "stdin": (
-                                "String or bytes (base64) provided on "
-                                "standard input"
-                            ),
-                            "workdir": (
-                                "Optional working directory relative to the "
-                                "copied skill root"
-                            ),
-                        },
-                        "available_scripts": script_entries,
-                        "available_resources": [
-                            entry["uri"] for entry in resource_entries
-                        ],
-                    },
-                },
+                "usage": textwrap.dedent(
+                    """\
+                    Apply the skill instructions to complete the task.
+                    
+                    All skill resources are available via MCP resources.
+                    Use ctx.read_resource(uri) with any URI from the
+                    'resources' list to access files, scripts, or other
+                    supporting materials.
+                    
+                    The skill may include executable scripts. If you need
+                    to run a script, read it via ctx.read_resource(uri)
+                    and execute it yourself using appropriate tooling.
+                    """
+                ).strip(),
             }
-
-            if script is not None:
-                if not script.strip():
-                    raise SkillError(
-                        "Script path, if provided, must be a non-empty string."
-                    )
-                normalized_script = script.replace("\\", "/")
-                script_path = Path(normalized_script)
-                if script_path.is_absolute():
-                    raise SkillError(
-                        "Script path must be relative to the skill directory."
-                    )
-                normalized_relative = script_path.as_posix()
-                matching_resource = next(
-                    (
-                        entry
-                        for entry in resource_entries
-                        if entry["relative_path"] == normalized_relative
-                    ),
-                    None,
-                )
-                if matching_resource and not matching_resource["runnable"]:
-                    raise SkillError(
-                        "'{relative}' is a resource, not an executable. Use "
-                        "ctx.read_resource('{uri}') to read it instead."
-                        .format(
-                            relative=matching_resource["relative_path"],
-                            uri=matching_resource["uri"],
-                        )
-                    )
-                script = normalized_relative
-                payload_mapping: Mapping[str, Any]
-                if script_payload is None:
-                    payload_mapping = {}
-                elif isinstance(script_payload, Mapping):
-                    payload_mapping = dict(script_payload)
-                else:
-                    raise SkillError(
-                        "'script_payload' must be a mapping of script inputs."
-                    )
-
-                effective_timeout = bound_timeout
-                if script_timeout is not None:
-                    effective_timeout = float(script_timeout)
-
-                result = await run_script(
-                    bound_skill,
-                    script,
-                    payload_mapping,
-                    timeout=effective_timeout,
-                )
-                response["script_execution"] = result
 
             return response
         except SkillError as exc:
@@ -780,13 +432,6 @@ invoking scripts.
                 exc_info=True,
             )
             raise ToolError(str(exc)) from exc
-        finally:
-            duration = asyncio.get_running_loop().time() - start
-            LOGGER.info(
-                "Skill %s invocation completed in %.2fs",
-                bound_skill.slug,
-                duration,
-            )
 
     return _skill_tool
 
@@ -826,7 +471,7 @@ def configure_logging(verbose: bool, log_to_file: bool) -> None:
     )
 
 
-def build_server(registry: SkillRegistry, *, timeout: float) -> FastMCP:
+def build_server(registry: SkillRegistry) -> FastMCP:
     summary = ", ".join(
         skill.metadata.name for skill in registry.skills
     ) or "No skills"
@@ -840,7 +485,6 @@ def build_server(registry: SkillRegistry, *, timeout: float) -> FastMCP:
         register_skill_tool(
             mcp,
             skill,
-            timeout=timeout,
             resources=resource_metadata,
         )
     return mcp
@@ -868,12 +512,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             "Directory containing skill folders "
             f"(default: {DEFAULT_SKILLS_ROOT})"
         ),
-    )
-    parser.add_argument(
-        "--timeout",
-        type=float,
-        default=DEFAULT_TIMEOUT,
-        help="Script timeout in seconds",
     )
     parser.add_argument(
         "--transport",
@@ -934,7 +572,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         list_skills(registry)
         return
 
-    server = build_server(registry, timeout=args.timeout)
+    server = build_server(registry)
     run_kwargs: dict[str, Any] = {"transport": args.transport}
     if args.transport in {"http", "sse"}:
         run_kwargs.update({"host": args.host, "port": args.port})

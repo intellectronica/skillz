@@ -4,7 +4,6 @@ from ._version import __version__
 from ._server import (
     Skill,
     SkillError,
-    SkillExecutionError,
     SkillMetadata,
     SkillRegistry,
     SkillValidationError,
@@ -18,7 +17,6 @@ from ._server import (
 __all__ = [
     "Skill",
     "SkillError",
-    "SkillExecutionError",
     "SkillMetadata",
     "SkillRegistry",
     "SkillValidationError",

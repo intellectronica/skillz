@@ -290,10 +290,7 @@ def _build_resource_uri(skill: Skill, relative_path: Path) -> str:
     encoded_slug = quote(skill.slug, safe="")
     encoded_parts = [quote(part, safe="") for part in relative_path.parts]
     path_suffix = "/".join(encoded_parts)
-    if path_suffix:
-        return f"file://skillz/{encoded_slug}/{path_suffix}"
-    return f"file://skillz/{encoded_slug}"
-
+    return f"file://skillz/{encoded_slug}/{path_suffix}"
 
 
 

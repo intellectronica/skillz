@@ -24,7 +24,8 @@ from typing import (
     Optional,
     TypedDict,
 )
-from urllib.parse import quote
+from urllib.parse import quote, unquote
+import base64
 
 import yaml
 from fastmcp import Context, FastMCP
@@ -317,6 +318,117 @@ def _detect_mime_type(file_path: Path) -> Optional[str]:
     return mime_type
 
 
+def _make_error_resource(resource_uri: str, message: str) -> Dict[str, Any]:
+    """Create an error resource response.
+
+    Returns a resource-shaped JSON with an error message.
+    Used when resource URI is invalid or resource cannot be found.
+    """
+    # Try to extract a name from the URI
+    name = "invalid resource"
+    if resource_uri.startswith("resource://skillz/"):
+        try:
+            path_part = resource_uri[len("resource://skillz/"):]
+            if path_part:
+                name = path_part
+        except Exception:  # pragma: no cover - defensive
+            pass
+
+    return {
+        "uri": resource_uri,
+        "name": name,
+        "mime_type": "text/plain",
+        "content": f"Error: {message}",
+        "encoding": "utf-8",
+    }
+
+
+def _fetch_resource_json(
+    registry: SkillRegistry, resource_uri: str
+) -> Dict[str, Any]:
+    """Fetch a resource by URI and return as JSON.
+
+    Returns a dict with fields: uri, name, mime_type, content, encoding.
+    On any error, returns an error resource (never raises).
+    """
+    # Validate URI prefix
+    if not resource_uri.startswith("resource://skillz/"):
+        return _make_error_resource(
+            resource_uri,
+            "unsupported URI prefix. Expected resource://skillz/{skill-slug}/{path}",
+        )
+
+    # Parse slug and path
+    remainder = resource_uri[len("resource://skillz/"):]
+    if not remainder:
+        return _make_error_resource(
+            resource_uri, "invalid resource URI format"
+        )
+
+    parts = remainder.split("/", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return _make_error_resource(
+            resource_uri, "invalid resource URI format"
+        )
+
+    slug = unquote(parts[0])
+    rel_path_str = unquote(parts[1])
+
+    # Lookup skill
+    try:
+        skill = registry.get(slug)
+    except SkillError:
+        return _make_error_resource(resource_uri, f"skill not found: {slug}")
+
+    # Find the resource file
+    rel_path = Path(rel_path_str)
+    resource_file: Optional[Path] = None
+
+    for resource_path in skill.resources:
+        try:
+            resource_relative = resource_path.relative_to(skill.directory)
+            if resource_relative == rel_path:
+                resource_file = resource_path
+                break
+        except ValueError:  # pragma: no cover - defensive
+            continue
+
+    if resource_file is None:
+        return _make_error_resource(
+            resource_uri, f"resource not found: {rel_path_str}"
+        )
+
+    # Detect MIME type
+    mime_type = _detect_mime_type(resource_file)
+
+    # Read content with the same logic as _make_resource_reader
+    try:
+        data = resource_file.read_bytes()
+    except OSError as exc:
+        return _make_error_resource(
+            resource_uri, f"failed to read resource: {exc}"
+        )
+
+    # Try to decode as UTF-8 text; if that fails, encode as base64
+    try:
+        content = data.decode("utf-8")
+        encoding = "utf-8"
+    except UnicodeDecodeError:
+        content = base64.b64encode(data).decode("ascii")
+        encoding = "base64"
+
+    # Build resource name
+    name = _get_resource_name(skill, rel_path)
+
+    return {
+        "uri": resource_uri,
+        "name": name,
+        "mime_type": mime_type,
+        "content": content,
+        "encoding": encoding,
+    }
+
+
 def register_skill_resources(
     mcp: FastMCP, skill: Skill
 ) -> tuple[SkillResourceMetadata, ...]:
@@ -447,6 +559,11 @@ def register_skill_tool(
                     resources, and you determine it's appropriate to use them
                     for completing the task, retrieve them from the MCP server
                     using the resource URIs listed in the 'resources' field.
+
+                    If your client does not support MCP resources, call
+                    the fetch_resource tool and pass any URI from the
+                    resources array. Example:
+                    fetch_resource(resource_uri="resource://skillz/...")
                     """
                 ).strip(),
             }
@@ -509,6 +626,42 @@ def build_server(registry: SkillRegistry) -> FastMCP:
         version=SERVER_VERSION,
         instructions=f"Loaded skills: {summary}",
     )
+
+    # Register fetch_resource tool for clients without MCP resource support
+    @mcp.tool(
+        name="fetch_resource",
+        description=(
+            "Fetch a skill resource by URI for clients that do not support "
+            "MCP resources. Only supports resource://skillz/{skill-slug}/{path}."
+        ),
+    )
+    async def fetch_resource(
+        resource_uri: str,
+        ctx: Optional[Context] = None,
+    ) -> Mapping[str, Any]:
+        """Fetch a resource by URI and return its content."""
+        LOGGER.info("fetch_resource invoked for URI: %s", resource_uri)
+
+        if not resource_uri:
+            result = _make_error_resource(
+                "(missing)", "resource_uri is required"
+            )
+        else:
+            try:
+                result = _fetch_resource_json(registry, resource_uri)
+            except Exception as exc:  # pragma: no cover - defensive
+                LOGGER.error(
+                    "Unexpected error fetching resource %s: %s",
+                    resource_uri,
+                    exc,
+                    exc_info=True,
+                )
+                result = _make_error_resource(
+                    resource_uri, f"unexpected error: {exc}"
+                )
+
+        return result
+
     for skill in registry.skills:
         resource_metadata = register_skill_resources(mcp, skill)
         register_skill_tool(

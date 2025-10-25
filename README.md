@@ -84,7 +84,6 @@ agent.
 | Flag / Option | Description |
 | --- | --- |
 | positional `skills_root` | Optional skills directory (defaults to `~/.skillz`). |
-| `--timeout SECONDS` | Set the per-script timeout (default `60`). |
 | `--transport {stdio,http,sse}` | Choose the FastMCP transport (default `stdio`). |
 | `--host HOST` | Bind address for HTTP/SSE transports. |
 | `--port PORT` | Port for HTTP/SSE transports. |

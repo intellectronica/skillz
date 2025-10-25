@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import mimetypes
 import re
 import sys
 import textwrap
@@ -103,10 +104,17 @@ class Skill:
 
 
 class SkillResourceMetadata(TypedDict):
-    """Metadata describing a registered skill resource."""
+    """Metadata describing a registered skill resource following MCP spec.
+    
+    According to MCP specification:
+    - uri: Unique identifier for the resource (with protocol)
+    - name: Human-readable name (path without protocol prefix)
+    - mimeType: Optional MIME type for the resource
+    """
 
-    relative_path: str
     uri: str
+    name: str
+    mime_type: Optional[str]
 
 
 def slugify(value: str) -> str:
@@ -287,17 +295,47 @@ class SkillRegistry:
 
 
 def _build_resource_uri(skill: Skill, relative_path: Path) -> str:
+    """Build a resource URI following MCP specification.
+    
+    Format: [protocol]://[host]/[path]
+    Example: resource://skillz/skill-name/path/to/file.ext
+    """
     encoded_slug = quote(skill.slug, safe="")
     encoded_parts = [quote(part, safe="") for part in relative_path.parts]
     path_suffix = "/".join(encoded_parts)
-    return f"file://skillz/{encoded_slug}/{path_suffix}"
+    return f"resource://skillz/{encoded_slug}/{path_suffix}"
+
+
+def _get_resource_name(skill: Skill, relative_path: Path) -> str:
+    """Get resource name (path without protocol) following MCP specification.
+    
+    This is the URI path without the protocol prefix.
+    Example: skillz/skill-name/path/to/file.ext
+    """
+    return f"{skill.slug}/{relative_path.as_posix()}"
+
+
+def _detect_mime_type(file_path: Path) -> Optional[str]:
+    """Detect MIME type for a file, returning None if unknown.
+    
+    Uses Python's mimetypes library for detection.
+    """
+    mime_type, _ = mimetypes.guess_type(str(file_path))
+    return mime_type
 
 
 
 def register_skill_resources(
     mcp: FastMCP, skill: Skill
 ) -> tuple[SkillResourceMetadata, ...]:
-    """Register FastMCP resources for each file in a skill."""
+    """Register FastMCP resources for each file in a skill.
+    
+    Resources follow MCP specification:
+    - URI format: resource://skillz/{skill-slug}/{path}
+    - Name: {skill-slug}/{path} (URI without protocol)
+    - MIME type: Detected from file extension
+    - Content: UTF-8 text or base64-encoded binary
+    """
 
     metadata: list[SkillResourceMetadata] = []
     for resource_path in skill.resources:
@@ -306,8 +344,9 @@ def register_skill_resources(
         except ValueError:  # pragma: no cover - defensive safeguard
             relative_path = Path(resource_path.name)
 
-        relative_display = relative_path.as_posix()
         uri = _build_resource_uri(skill, relative_path)
+        name = _get_resource_name(skill, relative_path)
+        mime_type = _detect_mime_type(resource_path)
 
         def _make_resource_reader(path: Path) -> Callable[[], str | bytes]:
             def _read_resource() -> str | bytes:
@@ -318,21 +357,24 @@ def register_skill_resources(
                         f"Failed to read resource '{path}': {exc}"
                     ) from exc
 
+                # Try to decode as UTF-8 text; if that fails, return binary
                 try:
                     return data.decode("utf-8")
                 except UnicodeDecodeError:
+                    # FastMCP will handle base64 encoding for binary data
                     return data
 
             return _read_resource
 
-        mcp.resource(uri, name=f"{skill.slug}:{relative_display}")(
+        mcp.resource(uri, name=name, mime_type=mime_type)(
             _make_resource_reader(resource_path)
         )
 
         metadata.append(
             {
-                "relative_path": relative_display,
                 "uri": uri,
+                "name": name,
+                "mime_type": mime_type,
             }
         )
 
@@ -387,8 +429,9 @@ def register_skill_tool(
             instructions = bound_skill.read_body()
             resource_entries = [
                 {
-                    "relative_path": entry["relative_path"],
                     "uri": entry["uri"],
+                    "name": entry["name"],
+                    "mime_type": entry["mime_type"],
                 }
                 for entry in bound_resources
             ]

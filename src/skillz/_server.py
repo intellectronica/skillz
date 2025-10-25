@@ -80,6 +80,7 @@ class Skill:
     metadata: SkillMetadata
     resources: tuple[Path, ...]
     zip_path: Optional[Path] = None
+    zip_root_prefix: str = ""
     _zip_members: Optional[set[str]] = field(default=None, init=False)
 
     def __post_init__(self) -> None:
@@ -87,11 +88,21 @@ class Skill:
         if self.zip_path is not None:
             with zipfile.ZipFile(self.zip_path) as z:
                 # Cache file members (exclude directory entries)
-                self._zip_members = {
+                # Strip the root prefix if present
+                all_members = {
                     name
                     for name in z.namelist()
                     if not name.endswith("/")
                 }
+                if self.zip_root_prefix:
+                    # Store members without the prefix for easier access
+                    self._zip_members = {
+                        name[len(self.zip_root_prefix):]
+                        for name in all_members
+                        if name.startswith(self.zip_root_prefix)
+                    }
+                else:
+                    self._zip_members = all_members
 
     @property
     def is_zip(self) -> bool:
@@ -102,7 +113,9 @@ class Skill:
         """Read file content as bytes."""
         if self.is_zip:
             with zipfile.ZipFile(self.zip_path) as z:
-                return z.read(rel_path)
+                # Add the root prefix if present
+                zip_member_path = self.zip_root_prefix + rel_path
+                return z.read(zip_member_path)
         else:
             return (self.directory / rel_path).read_bytes()
 
@@ -353,19 +366,44 @@ class SkillRegistry:
         """Try to register a zip file as a skill."""
         try:
             with zipfile.ZipFile(zip_path) as z:
-                # Check if SKILL.md exists at root
+                # Check if SKILL.md exists at root or in single top-level dir
                 members = {
                     name for name in z.namelist() if not name.endswith("/")
                 }
-                if SKILL_MARKDOWN not in members:
+
+                skill_md_path = None
+                zip_root_prefix = ""
+
+                # First, try SKILL.md at root
+                if SKILL_MARKDOWN in members:
+                    skill_md_path = SKILL_MARKDOWN
+                else:
+                    # Try to find SKILL.md in single top-level directory
+                    # Pattern: skill-name.zip contains skill-name/SKILL.md
+                    top_level_dirs = set()
+                    for name in z.namelist():
+                        if "/" in name:
+                            top_dir = name.split("/", 1)[0]
+                            top_level_dirs.add(top_dir)
+
+                    # If there's exactly one top-level directory
+                    if len(top_level_dirs) == 1:
+                        top_dir = list(top_level_dirs)[0]
+                        candidate = f"{top_dir}/{SKILL_MARKDOWN}"
+                        if candidate in members:
+                            skill_md_path = candidate
+                            zip_root_prefix = f"{top_dir}/"
+
+                if skill_md_path is None:
                     LOGGER.debug(
-                        "Zip %s missing SKILL.md at root; skipping",
+                        "Zip %s missing SKILL.md at root or in "
+                        "single top-level directory; skipping",
                         zip_path,
                     )
                     return
 
                 # Parse SKILL.md from zip
-                skill_md_data = z.read(SKILL_MARKDOWN)
+                skill_md_data = z.read(skill_md_path)
                 skill_md_text = skill_md_data.decode("utf-8")
 
         except zipfile.BadZipFile:
@@ -467,11 +505,17 @@ class SkillRegistry:
             metadata=metadata,
             resources=(),  # Will be populated from zip
             zip_path=zip_path.resolve(),
+            zip_root_prefix=zip_root_prefix,
         )
 
         self._skills_by_slug[slug] = skill
         self._skills_by_name[metadata.name] = skill
-        LOGGER.debug("Registered zip-based skill '%s' from %s", slug, zip_path)
+        LOGGER.debug(
+            "Registered zip-based skill '%s' from %s (root_prefix='%s')",
+            slug,
+            zip_path,
+            zip_root_prefix,
+        )
 
     def _collect_resources(self, directory: Path) -> tuple[Path, ...]:
         """Collect all files in skill directory except SKILL.md.

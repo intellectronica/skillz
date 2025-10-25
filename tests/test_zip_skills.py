@@ -404,3 +404,64 @@ Dir content.
     assert zip_skill_obj.is_zip
     assert dir_skill_obj.metadata.name == "DirSkill"
     assert zip_skill_obj.metadata.name == "ZipSkill"
+
+
+def test_zip_with_top_level_directory(tmp_path: Path) -> None:
+    """Test zip with single top-level directory containing SKILL.md."""
+    # Create a zip with structure: my-skill.zip/my-skill/SKILL.md
+    zip_path = tmp_path / "my-skill.zip"
+    with zipfile.ZipFile(zip_path, "w") as z:
+        z.writestr(
+            "my-skill/SKILL.md",
+            """---
+name: MySkill
+description: Test skill in top-level dir
+---
+Instructions.
+""",
+        )
+        z.writestr("my-skill/resource.txt", "Hello from nested structure!")
+        z.writestr("my-skill/scripts/run.py", "print('test')")
+
+    registry = SkillRegistry(tmp_path)
+    registry.load()
+
+    # Should be loaded
+    assert len(registry.skills) == 1
+    skill = registry.get("myskill")
+    assert skill.metadata.name == "MySkill"
+    assert skill.is_zip
+    assert skill.zip_root_prefix == "my-skill/"
+
+
+@pytest.mark.asyncio
+async def test_zip_with_top_level_directory_resources(
+    tmp_path: Path,
+) -> None:
+    """Test reading resources from zip with top-level directory."""
+    zip_path = tmp_path / "test-skill.zip"
+    with zipfile.ZipFile(zip_path, "w") as z:
+        z.writestr(
+            "test-skill/SKILL.md",
+            """---
+name: TestSkill
+description: Test
+---
+Content.
+""",
+        )
+        z.writestr("test-skill/data.txt", "Test data from nested structure")
+
+    registry = SkillRegistry(tmp_path)
+    registry.load()
+
+    server = build_server(registry)
+    tools = await server.get_tools()
+    fetch_tool = tools["fetch_resource"]
+
+    result = await fetch_tool.fn(
+        resource_uri="resource://skillz/testskill/data.txt"
+    )
+
+    assert result["encoding"] == "utf-8"
+    assert result["content"] == "Test data from nested structure"

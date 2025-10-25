@@ -456,11 +456,6 @@ def register_skill_tool(
                     resources, and you determine it's appropriate to use them
                     for completing the task, retrieve them from the MCP server
                     using the resource URIs listed in the 'resources' field.
-
-                    Each resource includes:
-                    - uri: The resource identifier to retrieve
-                    - name: Human-readable path
-                    - mime_type: Content type (if detected)
                     """
                 ).strip(),
             }

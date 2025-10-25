@@ -266,7 +266,8 @@ class SkillRegistry:
         """Collect all files in skill directory except SKILL.md.
 
         SKILL.md is only returned from the tool, not as a resource.
-        All other files in the skill directory and subdirectories are resources.
+        All other files in the skill directory and subdirectories are
+        resources.
         """
         root = directory.resolve()
         skill_md_path = root / SKILL_MARKDOWN

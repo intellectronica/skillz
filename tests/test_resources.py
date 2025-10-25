@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from skillz import SkillRegistry
-from skillz._server import register_skill_resources, build_server
+from skillz._server import register_skill_resources
 
 
 def write_skill_with_resources(
@@ -44,7 +44,6 @@ def test_resource_metadata_follows_mcp_spec(tmp_path: Path) -> None:
     registry.load()
 
     skill = registry.get("testskill")
-    server = build_server(registry)
 
     # Get resource metadata
     from fastmcp import FastMCP

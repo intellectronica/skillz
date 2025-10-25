@@ -401,9 +401,8 @@ def register_skill_tool(
 ) -> Callable[..., Awaitable[Mapping[str, Any]]]:
     """Register a tool that returns skill instructions and resource URIs.
 
-    Clients are expected to read the instructions, then use
-    ctx.read_resource(uri) to access any resources they need
-    (including scripts, which they can then execute themselves if desired).
+    Clients are expected to read the instructions and retrieve any
+    referenced resources from the MCP server as needed.
     """
     tool_name = skill.slug
     description = _format_tool_description(skill)
@@ -453,14 +452,15 @@ def register_skill_tool(
                     """\
                     Apply the skill instructions to complete the task.
 
-                    All skill resources are available via MCP resources.
-                    Use ctx.read_resource(uri) with any URI from the
-                    'resources' list to access files, scripts, or other
-                    supporting materials.
+                    If the skill instructions reference additional files or
+                    resources, and you determine it's appropriate to use them
+                    for completing the task, retrieve them from the MCP server
+                    using the resource URIs listed in the 'resources' field.
 
-                    The skill may include executable scripts. If you need
-                    to run a script, read it via ctx.read_resource(uri)
-                    and execute it yourself using appropriate tooling.
+                    Each resource includes:
+                    - uri: The resource identifier to retrieve
+                    - name: Human-readable path
+                    - mime_type: Content type (if detected)
                     """
                 ).strip(),
             }

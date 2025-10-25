@@ -35,6 +35,48 @@ _or_
 }
 ```
 
+## Usage
+
+Skillz looks for skills inside the root directory you provide (defaults to
+`~/.skillz`). Each skill lives in its own folder or zip archive that includes a
+`SKILL.md` file with YAML front matter describing the skill. Any other files in
+the skill become downloadable resources for your agent (scripts, datasets,
+examples, etc.).
+
+An example directory might look like this:
+
+```text
+~/.skillz/
+├── summarize-docs/
+│   ├── SKILL.md
+│   ├── summarize.py
+│   └── prompts/example.txt
+├── translate.zip
+└── web-search/
+    └── SKILL.md
+```
+
+When packaging skills as zips, include the `SKILL.md` either at the root of the
+archive or inside a single top-level directory:
+
+```text
+translate.zip
+├── SKILL.md
+└── helpers/
+    └── translate.js
+```
+
+```text
+data-cleaner.zip
+└── data-cleaner/
+    ├── SKILL.md
+    └── clean.py
+```
+
+You can use `skillz --list-skills` (optionally pointing at another skills root)
+to verify which skills the server will expose before connecting it to your
+agent.
+
 ## CLI Reference
 
 `skillz [skills_root] [options]`

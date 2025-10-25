@@ -52,8 +52,9 @@ def test_resource_metadata_follows_mcp_spec(tmp_path: Path) -> None:
     mcp = FastMCP()
     metadata = register_skill_resources(mcp, skill)
 
-    # Should have 4 resources (SKILL.md, script.py, README.md, data.bin)
-    assert len(metadata) == 4
+    # Should have 3 resources (script.py, README.md, data.bin)
+    # SKILL.md is NOT a resource - it's only returned from the tool
+    assert len(metadata) == 3
 
     # Check each resource has required fields
     for resource in metadata:
@@ -73,6 +74,9 @@ def test_resource_metadata_follows_mcp_spec(tmp_path: Path) -> None:
         assert resource["name"].startswith("testskill/")
         assert not resource["name"].startswith("resource://")
 
+        # SKILL.md should NOT be in resources
+        assert "SKILL.md" not in resource["name"]
+
 
 def test_resource_mime_types(tmp_path: Path) -> None:
     """MIME types should be detected correctly."""
@@ -91,10 +95,10 @@ def test_resource_mime_types(tmp_path: Path) -> None:
     # Create lookup by name
     resources_by_name = {r["name"]: r for r in metadata}
 
-    # Check MIME types
-    assert (
-        resources_by_name["testskill/SKILL.md"]["mime_type"] == "text/markdown"
-    )
+    # SKILL.md should NOT be in resources
+    assert "testskill/SKILL.md" not in resources_by_name
+
+    # Check MIME types for actual resources
     assert (
         resources_by_name["testskill/script.py"]["mime_type"]
         == "text/x-python"

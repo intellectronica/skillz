@@ -273,12 +273,18 @@ class SkillRegistry:
         LOGGER.info("Loaded %d skills", len(self._skills_by_slug))
 
     def _collect_resources(self, directory: Path) -> tuple[Path, ...]:
+        """Collect all files in skill directory except SKILL.md.
+
+        SKILL.md is only returned from the tool, not as a resource.
+        All other files in the skill directory and subdirectories are resources.
+        """
         root = directory.resolve()
-        files = [root / SKILL_MARKDOWN]
+        skill_md_path = root / SKILL_MARKDOWN
+        files = []
         for file_path in sorted(root.rglob("*")):
             if not file_path.is_file():
                 continue
-            if file_path == root / SKILL_MARKDOWN:
+            if file_path == skill_md_path:
                 continue
             files.append(file_path)
         return tuple(files)

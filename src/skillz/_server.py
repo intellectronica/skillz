@@ -1,15 +1,5 @@
 """Skillz MCP server exposing local Anthropic-style skills via FastMCP.
 
-Usage examples::
-
-    uv run python -m skillz /path/to/skills --verbose
-    uv run python -m skillz tmp/examples --list-skills
-
-Manual smoke tests rely on the sample fixture in ``tmp/examples`` created
-by the project checklist. The ``--list-skills`` flag validates discovery
-without starting the transport, while additional sanity checks can be run
-with a short script that invokes the generated tool functions directly.
-
 Skills provide instructions and resources via MCP. Clients are responsible
 for reading resources (including any scripts) and executing them if needed.
 """
@@ -18,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import mimetypes
 import re
 import sys
 import textwrap
@@ -65,8 +56,6 @@ class SkillValidationError(SkillError):
         super().__init__(message, code="validation_error")
 
 
-
-
 @dataclass(slots=True)
 class SkillMetadata:
     """Structured metadata extracted from a skill front matter block."""
@@ -103,10 +92,17 @@ class Skill:
 
 
 class SkillResourceMetadata(TypedDict):
-    """Metadata describing a registered skill resource."""
+    """Metadata describing a registered skill resource following MCP spec.
 
-    relative_path: str
+    According to MCP specification:
+    - uri: Unique identifier for the resource (with protocol)
+    - name: Human-readable name (path without protocol prefix)
+    - mimeType: Optional MIME type for the resource
+    """
+
     uri: str
+    name: str
+    mime_type: Optional[str]
 
 
 def slugify(value: str) -> str:
@@ -267,12 +263,19 @@ class SkillRegistry:
         LOGGER.info("Loaded %d skills", len(self._skills_by_slug))
 
     def _collect_resources(self, directory: Path) -> tuple[Path, ...]:
+        """Collect all files in skill directory except SKILL.md.
+
+        SKILL.md is only returned from the tool, not as a resource.
+        All other files in the skill directory and subdirectories are
+        resources.
+        """
         root = directory.resolve()
-        files = [root / SKILL_MARKDOWN]
+        skill_md_path = root / SKILL_MARKDOWN
+        files = []
         for file_path in sorted(root.rglob("*")):
             if not file_path.is_file():
                 continue
-            if file_path == root / SKILL_MARKDOWN:
+            if file_path == skill_md_path:
                 continue
             files.append(file_path)
         return tuple(files)
@@ -284,23 +287,47 @@ class SkillRegistry:
             raise SkillError(f"Unknown skill '{slug}'") from exc
 
 
-
-
 def _build_resource_uri(skill: Skill, relative_path: Path) -> str:
+    """Build a resource URI following MCP specification.
+
+    Format: [protocol]://[host]/[path]
+    Example: resource://skillz/skill-name/path/to/file.ext
+    """
     encoded_slug = quote(skill.slug, safe="")
     encoded_parts = [quote(part, safe="") for part in relative_path.parts]
     path_suffix = "/".join(encoded_parts)
-    if path_suffix:
-        return f"resource://skillz/{encoded_slug}/{path_suffix}"
-    return f"resource://skillz/{encoded_slug}"
+    return f"resource://skillz/{encoded_slug}/{path_suffix}"
 
 
+def _get_resource_name(skill: Skill, relative_path: Path) -> str:
+    """Get resource name (path without protocol) following MCP specification.
+
+    This is the URI path without the protocol prefix.
+    Example: skillz/skill-name/path/to/file.ext
+    """
+    return f"{skill.slug}/{relative_path.as_posix()}"
+
+
+def _detect_mime_type(file_path: Path) -> Optional[str]:
+    """Detect MIME type for a file, returning None if unknown.
+
+    Uses Python's mimetypes library for detection.
+    """
+    mime_type, _ = mimetypes.guess_type(str(file_path))
+    return mime_type
 
 
 def register_skill_resources(
     mcp: FastMCP, skill: Skill
 ) -> tuple[SkillResourceMetadata, ...]:
-    """Register FastMCP resources for each file in a skill."""
+    """Register FastMCP resources for each file in a skill.
+
+    Resources follow MCP specification:
+    - URI format: resource://skillz/{skill-slug}/{path}
+    - Name: {skill-slug}/{path} (URI without protocol)
+    - MIME type: Detected from file extension
+    - Content: UTF-8 text or base64-encoded binary
+    """
 
     metadata: list[SkillResourceMetadata] = []
     for resource_path in skill.resources:
@@ -309,8 +336,9 @@ def register_skill_resources(
         except ValueError:  # pragma: no cover - defensive safeguard
             relative_path = Path(resource_path.name)
 
-        relative_display = relative_path.as_posix()
         uri = _build_resource_uri(skill, relative_path)
+        name = _get_resource_name(skill, relative_path)
+        mime_type = _detect_mime_type(resource_path)
 
         def _make_resource_reader(path: Path) -> Callable[[], str | bytes]:
             def _read_resource() -> str | bytes:
@@ -321,21 +349,24 @@ def register_skill_resources(
                         f"Failed to read resource '{path}': {exc}"
                     ) from exc
 
+                # Try to decode as UTF-8 text; if that fails, return binary
                 try:
                     return data.decode("utf-8")
                 except UnicodeDecodeError:
+                    # FastMCP will handle base64 encoding for binary data
                     return data
 
             return _read_resource
 
-        mcp.resource(uri, name=f"{skill.slug}:{relative_display}")(
+        mcp.resource(uri, name=name, mime_type=mime_type)(
             _make_resource_reader(resource_path)
         )
 
         metadata.append(
             {
-                "relative_path": relative_display,
                 "uri": uri,
+                "name": name,
+                "mime_type": mime_type,
             }
         )
 
@@ -361,9 +392,8 @@ def register_skill_tool(
 ) -> Callable[..., Awaitable[Mapping[str, Any]]]:
     """Register a tool that returns skill instructions and resource URIs.
 
-    Clients are expected to read the instructions, then use
-    ctx.read_resource(uri) to access any resources they need
-    (including scripts, which they can then execute themselves if desired).
+    Clients are expected to read the instructions and retrieve any
+    referenced resources from the MCP server as needed.
     """
     tool_name = skill.slug
     description = _format_tool_description(skill)
@@ -390,8 +420,9 @@ def register_skill_tool(
             instructions = bound_skill.read_body()
             resource_entries = [
                 {
-                    "relative_path": entry["relative_path"],
                     "uri": entry["uri"],
+                    "name": entry["name"],
+                    "mime_type": entry["mime_type"],
                 }
                 for entry in bound_resources
             ]
@@ -412,14 +443,10 @@ def register_skill_tool(
                     """\
                     Apply the skill instructions to complete the task.
 
-                    All skill resources are available via MCP resources.
-                    Use ctx.read_resource(uri) with any URI from the
-                    'resources' list to access files, scripts, or other
-                    supporting materials.
-
-                    The skill may include executable scripts. If you need
-                    to run a script, read it via ctx.read_resource(uri)
-                    and execute it yourself using appropriate tooling.
+                    If the skill instructions reference additional files or
+                    resources, and you determine it's appropriate to use them
+                    for completing the task, retrieve them from the MCP server
+                    using the resource URIs listed in the 'resources' field.
                     """
                 ).strip(),
             }
@@ -473,9 +500,10 @@ def configure_logging(verbose: bool, log_to_file: bool) -> None:
 
 
 def build_server(registry: SkillRegistry) -> FastMCP:
-    summary = ", ".join(
-        skill.metadata.name for skill in registry.skills
-    ) or "No skills"
+    summary = (
+        ", ".join(skill.metadata.name for skill in registry.skills)
+        or "No skills"
+    )
     mcp = FastMCP(
         name=SERVER_NAME,
         version=SERVER_VERSION,

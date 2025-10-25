@@ -66,8 +66,6 @@ class SkillValidationError(SkillError):
         super().__init__(message, code="validation_error")
 
 
-
-
 @dataclass(slots=True)
 class SkillMetadata:
     """Structured metadata extracted from a skill front matter block."""
@@ -105,7 +103,7 @@ class Skill:
 
 class SkillResourceMetadata(TypedDict):
     """Metadata describing a registered skill resource following MCP spec.
-    
+
     According to MCP specification:
     - uri: Unique identifier for the resource (with protocol)
     - name: Human-readable name (path without protocol prefix)
@@ -292,11 +290,9 @@ class SkillRegistry:
             raise SkillError(f"Unknown skill '{slug}'") from exc
 
 
-
-
 def _build_resource_uri(skill: Skill, relative_path: Path) -> str:
     """Build a resource URI following MCP specification.
-    
+
     Format: [protocol]://[host]/[path]
     Example: resource://skillz/skill-name/path/to/file.ext
     """
@@ -308,7 +304,7 @@ def _build_resource_uri(skill: Skill, relative_path: Path) -> str:
 
 def _get_resource_name(skill: Skill, relative_path: Path) -> str:
     """Get resource name (path without protocol) following MCP specification.
-    
+
     This is the URI path without the protocol prefix.
     Example: skillz/skill-name/path/to/file.ext
     """
@@ -317,19 +313,18 @@ def _get_resource_name(skill: Skill, relative_path: Path) -> str:
 
 def _detect_mime_type(file_path: Path) -> Optional[str]:
     """Detect MIME type for a file, returning None if unknown.
-    
+
     Uses Python's mimetypes library for detection.
     """
     mime_type, _ = mimetypes.guess_type(str(file_path))
     return mime_type
 
 
-
 def register_skill_resources(
     mcp: FastMCP, skill: Skill
 ) -> tuple[SkillResourceMetadata, ...]:
     """Register FastMCP resources for each file in a skill.
-    
+
     Resources follow MCP specification:
     - URI format: resource://skillz/{skill-slug}/{path}
     - Name: {skill-slug}/{path} (URI without protocol)
@@ -513,9 +508,10 @@ def configure_logging(verbose: bool, log_to_file: bool) -> None:
 
 
 def build_server(registry: SkillRegistry) -> FastMCP:
-    summary = ", ".join(
-        skill.metadata.name for skill in registry.skills
-    ) or "No skills"
+    summary = (
+        ", ".join(skill.metadata.name for skill in registry.skills)
+        or "No skills"
+    )
     mcp = FastMCP(
         name=SERVER_NAME,
         version=SERVER_VERSION,

@@ -1,15 +1,5 @@
 """Skillz MCP server exposing local Anthropic-style skills via FastMCP.
 
-Usage examples::
-
-    uv run python -m skillz /path/to/skills --verbose
-    uv run python -m skillz tmp/examples --list-skills
-
-Manual smoke tests rely on the sample fixture in ``tmp/examples`` created
-by the project checklist. The ``--list-skills`` flag validates discovery
-without starting the transport, while additional sanity checks can be run
-with a short script that invokes the generated tool functions directly.
-
 Skills provide instructions and resources via MCP. Clients are responsible
 for reading resources (including any scripts) and executing them if needed.
 """

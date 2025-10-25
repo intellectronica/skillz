@@ -12,6 +12,7 @@ import mimetypes
 import re
 import sys
 import textwrap
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (
@@ -20,6 +21,7 @@ from typing import (
     Callable,
     Dict,
     Iterable,
+    Iterator,
     Mapping,
     Optional,
     TypedDict,
@@ -70,19 +72,92 @@ class SkillMetadata:
 
 @dataclass(slots=True)
 class Skill:
-    """Runtime representation of a skill directory."""
+    """Runtime representation of a skill directory or zip file."""
 
     slug: str
     directory: Path
     instructions_path: Path
     metadata: SkillMetadata
     resources: tuple[Path, ...]
+    zip_path: Optional[Path] = None
+    zip_root_prefix: str = ""
+    _zip_members: Optional[set[str]] = field(default=None, init=False)
+
+    def __post_init__(self) -> None:
+        """Cache zip members for efficient lookups."""
+        if self.zip_path is not None:
+            with zipfile.ZipFile(self.zip_path) as z:
+                # Cache file members (exclude directory entries)
+                # Strip the root prefix if present
+                all_members = {
+                    name
+                    for name in z.namelist()
+                    if not name.endswith("/")
+                }
+                if self.zip_root_prefix:
+                    # Store members without the prefix for easier access
+                    self._zip_members = {
+                        name[len(self.zip_root_prefix):]
+                        for name in all_members
+                        if name.startswith(self.zip_root_prefix)
+                    }
+                else:
+                    self._zip_members = all_members
+
+    @property
+    def is_zip(self) -> bool:
+        """Check if this skill is backed by a zip file."""
+        return self.zip_path is not None
+
+    def open_bytes(self, rel_path: str) -> bytes:
+        """Read file content as bytes."""
+        if self.is_zip:
+            with zipfile.ZipFile(self.zip_path) as z:
+                # Add the root prefix if present
+                zip_member_path = self.zip_root_prefix + rel_path
+                return z.read(zip_member_path)
+        else:
+            return (self.directory / rel_path).read_bytes()
+
+    def exists(self, rel_path: str) -> bool:
+        """Check if a relative path exists in this skill."""
+        if self.is_zip:
+            return rel_path in (self._zip_members or set())
+        else:
+            return (self.directory / rel_path).exists()
+
+    def iter_resource_paths(self) -> Iterator[str]:
+        """Iterate over resource file paths (excluding SKILL.md)."""
+        if self.is_zip:
+            # Yield file paths from zip, skip SKILL.md and macOS metadata
+            for name in sorted(self._zip_members or []):
+                if name == SKILL_MARKDOWN:
+                    continue
+                if "__MACOSX/" in name or name.endswith(".DS_Store"):
+                    continue
+                yield name
+        else:
+            # Walk directory tree
+            for file_path in sorted(self.directory.rglob("*")):
+                if not file_path.is_file():
+                    continue
+                if file_path == self.instructions_path:
+                    continue
+                try:
+                    rel_path = file_path.relative_to(self.directory)
+                    yield rel_path.as_posix()
+                except ValueError:
+                    continue
 
     def read_body(self) -> str:
         """Return the Markdown body of the skill."""
 
         LOGGER.debug("Reading body for skill %s", self.slug)
-        text = self.instructions_path.read_text(encoding="utf-8")
+        if self.is_zip:
+            data = self.open_bytes(SKILL_MARKDOWN)
+            text = data.decode("utf-8")
+        else:
+            text = self.instructions_path.read_text(encoding="utf-8")
         match = FRONT_MATTER_PATTERN.match(text)
         if match:
             return match.group(2).lstrip()
@@ -209,59 +284,238 @@ class SkillRegistry:
         self._skills_by_name.clear()
 
         root = self.root.resolve()
-        skill_manifests = sorted(
-            (path for path in root.rglob(SKILL_MARKDOWN) if path.is_file()),
-            key=lambda path: str(path).lower(),
-        )
-
-        for skill_md in skill_manifests:
-            child = skill_md.parent
-
-            try:
-                metadata, _ = parse_skill_md(skill_md)
-            except SkillValidationError as exc:
-                LOGGER.warning("Skipping invalid skill at %s: %s", child, exc)
-                continue
-
-            slug = slugify(metadata.name)
-            if slug in self._skills_by_slug:
-                LOGGER.error(
-                    "Duplicate skill slug '%s'; skipping %s",
-                    slug,
-                    child,
-                )
-                continue
-
-            if metadata.name in self._skills_by_name:
-                LOGGER.warning(
-                    "Duplicate skill name '%s' found in %s; "
-                    "only first occurrence is kept",
-                    metadata.name,
-                    child,
-                )
-                continue
-
-            resources = self._collect_resources(child)
-
-            skill = Skill(
-                slug=slug,
-                directory=child.resolve(),
-                instructions_path=skill_md.resolve(),
-                metadata=metadata,
-                resources=resources,
-            )
-
-            if child.name != slug:
-                LOGGER.debug(
-                    "Skill directory name '%s' does not match slug '%s'",
-                    child.name,
-                    slug,
-                )
-
-            self._skills_by_slug[slug] = skill
-            self._skills_by_name[metadata.name] = skill
+        self._scan_directory(root)
 
         LOGGER.info("Loaded %d skills", len(self._skills_by_slug))
+
+    def _scan_directory(self, directory: Path) -> None:
+        """Recursively scan directory for skills (both dirs and zips)."""
+        # If this directory has SKILL.md, treat it as a dir-based skill
+        skill_md_path = directory / SKILL_MARKDOWN
+        if skill_md_path.is_file():
+            self._register_dir_skill(directory, skill_md_path)
+            return  # Don't recurse into skill directories
+
+        # Otherwise, look for zip files and subdirectories
+        try:
+            entries = list(directory.iterdir())
+        except (OSError, PermissionError) as exc:
+            LOGGER.warning("Cannot read directory %s: %s", directory, exc)
+            return
+
+        # First, recurse into subdirectories (to find directory skills first)
+        # This ensures directory skills take precedence over zip skills
+        for entry in sorted(entries):
+            if entry.is_dir():
+                self._scan_directory(entry)
+
+        # Then check for zip files in this directory
+        for entry in sorted(entries):
+            if entry.is_file() and entry.suffix.lower() == ".zip":
+                self._try_register_zip_skill(entry)
+
+    def _register_dir_skill(self, directory: Path, skill_md: Path) -> None:
+        """Register a directory-based skill."""
+        try:
+            metadata, _ = parse_skill_md(skill_md)
+        except SkillValidationError as exc:
+            LOGGER.warning(
+                "Skipping invalid skill at %s: %s", directory, exc
+            )
+            return
+
+        slug = slugify(metadata.name)
+        if slug in self._skills_by_slug:
+            LOGGER.error(
+                "Duplicate skill slug '%s'; skipping %s",
+                slug,
+                directory,
+            )
+            return
+
+        if metadata.name in self._skills_by_name:
+            LOGGER.warning(
+                "Duplicate skill name '%s' found in %s; "
+                "only first occurrence is kept",
+                metadata.name,
+                directory,
+            )
+            return
+
+        resources = self._collect_resources(directory)
+
+        skill = Skill(
+            slug=slug,
+            directory=directory.resolve(),
+            instructions_path=skill_md.resolve(),
+            metadata=metadata,
+            resources=resources,
+        )
+
+        if directory.name != slug:
+            LOGGER.debug(
+                "Skill directory name '%s' does not match slug '%s'",
+                directory.name,
+                slug,
+            )
+
+        self._skills_by_slug[slug] = skill
+        self._skills_by_name[metadata.name] = skill
+
+    def _try_register_zip_skill(self, zip_path: Path) -> None:
+        """Try to register a zip file as a skill."""
+        try:
+            with zipfile.ZipFile(zip_path) as z:
+                # Check if SKILL.md exists at root or in single top-level dir
+                members = {
+                    name for name in z.namelist() if not name.endswith("/")
+                }
+
+                skill_md_path = None
+                zip_root_prefix = ""
+
+                # First, try SKILL.md at root
+                if SKILL_MARKDOWN in members:
+                    skill_md_path = SKILL_MARKDOWN
+                else:
+                    # Try to find SKILL.md in single top-level directory
+                    # Pattern: skill-name.zip contains skill-name/SKILL.md
+                    top_level_dirs = set()
+                    for name in z.namelist():
+                        if "/" in name:
+                            top_dir = name.split("/", 1)[0]
+                            top_level_dirs.add(top_dir)
+
+                    # If there's exactly one top-level directory
+                    if len(top_level_dirs) == 1:
+                        top_dir = list(top_level_dirs)[0]
+                        candidate = f"{top_dir}/{SKILL_MARKDOWN}"
+                        if candidate in members:
+                            skill_md_path = candidate
+                            zip_root_prefix = f"{top_dir}/"
+
+                if skill_md_path is None:
+                    LOGGER.debug(
+                        "Zip %s missing SKILL.md at root or in "
+                        "single top-level directory; skipping",
+                        zip_path,
+                    )
+                    return
+
+                # Parse SKILL.md from zip
+                skill_md_data = z.read(skill_md_path)
+                skill_md_text = skill_md_data.decode("utf-8")
+
+        except zipfile.BadZipFile:
+            LOGGER.warning("Invalid or corrupt zip file: %s", zip_path)
+            return
+        except (OSError, UnicodeDecodeError) as exc:
+            LOGGER.warning("Cannot read zip file %s: %s", zip_path, exc)
+            return
+
+        # Parse metadata
+        match = FRONT_MATTER_PATTERN.match(skill_md_text)
+        if not match:
+            LOGGER.warning(
+                "Zip %s SKILL.md missing front matter; skipping", zip_path
+            )
+            return
+
+        front_matter, body = match.groups()
+        try:
+            data = yaml.safe_load(front_matter) or {}
+        except yaml.YAMLError as exc:
+            LOGGER.warning(
+                "Cannot parse YAML in %s SKILL.md: %s", zip_path, exc
+            )
+            return
+
+        if not isinstance(data, Mapping):
+            LOGGER.warning(
+                "Front matter in %s SKILL.md must be mapping", zip_path
+            )
+            return
+
+        name = str(data.get("name", "")).strip()
+        description = str(data.get("description", "")).strip()
+        if not name or not description:
+            LOGGER.warning(
+                "Zip %s SKILL.md missing name or description", zip_path
+            )
+            return
+
+        allowed = data.get("allowed-tools") or data.get("allowed_tools") or []
+        if isinstance(allowed, str):
+            allowed_list = tuple(
+                part.strip() for part in allowed.split(",") if part.strip()
+            )
+        elif isinstance(allowed, Iterable):
+            allowed_list = tuple(
+                str(item).strip() for item in allowed if str(item).strip()
+            )
+        else:
+            allowed_list = ()
+
+        extra = {
+            key: value
+            for key, value in data.items()
+            if key
+            not in {
+                "name",
+                "description",
+                "license",
+                "allowed-tools",
+                "allowed_tools",
+            }
+        }
+
+        metadata = SkillMetadata(
+            name=name,
+            description=description,
+            license=(
+                str(data["license"]).strip() if data.get("license") else None
+            ),
+            allowed_tools=allowed_list,
+            extra=extra,
+        )
+
+        # Use zip stem as slug
+        slug = slugify(metadata.name)
+        if slug in self._skills_by_slug:
+            LOGGER.warning(
+                "Duplicate skill slug '%s'; skipping zip %s",
+                slug,
+                zip_path,
+            )
+            return
+
+        if metadata.name in self._skills_by_name:
+            LOGGER.warning(
+                "Duplicate skill name '%s' found in zip %s; skipping",
+                metadata.name,
+                zip_path,
+            )
+            return
+
+        # Create skill with zip_path set
+        skill = Skill(
+            slug=slug,
+            directory=zip_path.parent.resolve(),
+            instructions_path=zip_path.resolve(),
+            metadata=metadata,
+            resources=(),  # Will be populated from zip
+            zip_path=zip_path.resolve(),
+            zip_root_prefix=zip_root_prefix,
+        )
+
+        self._skills_by_slug[slug] = skill
+        self._skills_by_name[metadata.name] = skill
+        LOGGER.debug(
+            "Registered zip-based skill '%s' from %s (root_prefix='%s')",
+            slug,
+            zip_path,
+            zip_root_prefix,
+        )
 
     def _collect_resources(self, directory: Path) -> tuple[Path, ...]:
         """Collect all files in skill directory except SKILL.md.
@@ -269,6 +523,9 @@ class SkillRegistry:
         SKILL.md is only returned from the tool, not as a resource.
         All other files in the skill directory and subdirectories are
         resources.
+
+        Note: For zip-based skills, resources are collected via
+        iter_resource_paths() directly from the Skill object.
         """
         root = directory.resolve()
         skill_md_path = root / SKILL_MARKDOWN
@@ -374,37 +631,56 @@ def _fetch_resource_json(
     slug = unquote(parts[0])
     rel_path_str = unquote(parts[1])
 
+    # Validate path doesn't traverse upward
+    if ".." in rel_path_str or rel_path_str.startswith("/"):
+        return _make_error_resource(
+            resource_uri, "invalid path: path traversal not allowed"
+        )
+
     # Lookup skill
     try:
         skill = registry.get(slug)
     except SkillError:
         return _make_error_resource(resource_uri, f"skill not found: {slug}")
 
-    # Find the resource file
-    rel_path = Path(rel_path_str)
-    resource_file: Optional[Path] = None
+    # Check if resource exists
+    if skill.is_zip:
+        # For zip-based skills, check if resource exists
+        if not skill.exists(rel_path_str):
+            return _make_error_resource(
+                resource_uri, f"resource not found: {rel_path_str}"
+            )
+    else:
+        # For directory-based skills, find in resources list
+        rel_path = Path(rel_path_str)
+        resource_file: Optional[Path] = None
 
-    for resource_path in skill.resources:
-        try:
-            resource_relative = resource_path.relative_to(skill.directory)
-            if resource_relative == rel_path:
-                resource_file = resource_path
-                break
-        except ValueError:  # pragma: no cover - defensive
-            continue
+        for resource_path in skill.resources:
+            try:
+                resource_relative = resource_path.relative_to(
+                    skill.directory
+                )
+                if resource_relative == rel_path:
+                    resource_file = resource_path
+                    break
+            except ValueError:  # pragma: no cover - defensive
+                continue
 
-    if resource_file is None:
-        return _make_error_resource(
-            resource_uri, f"resource not found: {rel_path_str}"
-        )
+        if resource_file is None:
+            return _make_error_resource(
+                resource_uri, f"resource not found: {rel_path_str}"
+            )
 
-    # Detect MIME type
-    mime_type = _detect_mime_type(resource_file)
+    # Detect MIME type (from path string)
+    mime_type, _ = mimetypes.guess_type(rel_path_str)
 
-    # Read content with the same logic as _make_resource_reader
+    # Read content
     try:
-        data = resource_file.read_bytes()
-    except OSError as exc:
+        if skill.is_zip:
+            data = skill.open_bytes(rel_path_str)
+        else:
+            data = resource_file.read_bytes()
+    except (OSError, KeyError) as exc:
         return _make_error_resource(
             resource_uri, f"failed to read resource: {exc}"
         )
@@ -418,7 +694,7 @@ def _fetch_resource_json(
         encoding = "base64"
 
     # Build resource name
-    name = _get_resource_name(skill, rel_path)
+    name = f"{skill.slug}/{rel_path_str}"
 
     return {
         "uri": resource_uri,
@@ -439,48 +715,96 @@ def register_skill_resources(
     - Name: {skill-slug}/{path} (URI without protocol)
     - MIME type: Detected from file extension
     - Content: UTF-8 text or base64-encoded binary
+
+    Handles both directory-based and zip-based skills.
     """
 
     metadata: list[SkillResourceMetadata] = []
-    for resource_path in skill.resources:
-        try:
-            relative_path = resource_path.relative_to(skill.directory)
-        except ValueError:  # pragma: no cover - defensive safeguard
-            relative_path = Path(resource_path.name)
 
-        uri = _build_resource_uri(skill, relative_path)
-        name = _get_resource_name(skill, relative_path)
-        mime_type = _detect_mime_type(resource_path)
+    if skill.is_zip:
+        # For zip-based skills, iterate over resources from zip
+        for rel_path_str in skill.iter_resource_paths():
+            # Build URI and name
+            slug_encoded = quote(skill.slug, safe="")
+            path_encoded = quote(rel_path_str, safe="/")
+            uri = f"resource://skillz/{slug_encoded}/{path_encoded}"
+            name = f"{skill.slug}/{rel_path_str}"
+            mime_type, _ = mimetypes.guess_type(rel_path_str)
 
-        def _make_resource_reader(path: Path) -> Callable[[], str | bytes]:
-            def _read_resource() -> str | bytes:
-                try:
-                    data = path.read_bytes()
-                except OSError as exc:  # pragma: no cover
-                    raise SkillError(
-                        f"Failed to read resource '{path}': {exc}"
-                    ) from exc
+            def _make_zip_resource_reader(
+                s: Skill, p: str
+            ) -> Callable[[], str | bytes]:
+                def _read_resource() -> str | bytes:
+                    try:
+                        data = s.open_bytes(p)
+                    except (OSError, KeyError) as exc:  # pragma: no cover
+                        raise SkillError(
+                            f"Failed to read resource '{p}' from zip: {exc}"
+                        ) from exc
 
-                # Try to decode as UTF-8 text; if that fails, return binary
-                try:
-                    return data.decode("utf-8")
-                except UnicodeDecodeError:
-                    # FastMCP will handle base64 encoding for binary data
-                    return data
+                    # Try to decode as UTF-8 text; if that fails, return binary
+                    try:
+                        return data.decode("utf-8")
+                    except UnicodeDecodeError:
+                        # FastMCP will handle base64 encoding for binary
+                        return data
 
-            return _read_resource
+                return _read_resource
 
-        mcp.resource(uri, name=name, mime_type=mime_type)(
-            _make_resource_reader(resource_path)
-        )
+            mcp.resource(uri, name=name, mime_type=mime_type)(
+                _make_zip_resource_reader(skill, rel_path_str)
+            )
 
-        metadata.append(
-            {
-                "uri": uri,
-                "name": name,
-                "mime_type": mime_type,
-            }
-        )
+            metadata.append(
+                {
+                    "uri": uri,
+                    "name": name,
+                    "mime_type": mime_type,
+                }
+            )
+    else:
+        # For directory-based skills, iterate over file paths
+        for resource_path in skill.resources:
+            try:
+                relative_path = resource_path.relative_to(skill.directory)
+            except ValueError:  # pragma: no cover - defensive safeguard
+                relative_path = Path(resource_path.name)
+
+            uri = _build_resource_uri(skill, relative_path)
+            name = _get_resource_name(skill, relative_path)
+            mime_type = _detect_mime_type(resource_path)
+
+            def _make_resource_reader(
+                path: Path,
+            ) -> Callable[[], str | bytes]:
+                def _read_resource() -> str | bytes:
+                    try:
+                        data = path.read_bytes()
+                    except OSError as exc:  # pragma: no cover
+                        raise SkillError(
+                            f"Failed to read resource '{path}': {exc}"
+                        ) from exc
+
+                    # Try to decode as UTF-8 text; if that fails, return binary
+                    try:
+                        return data.decode("utf-8")
+                    except UnicodeDecodeError:
+                        # FastMCP will handle base64 encoding for binary data
+                        return data
+
+                return _read_resource
+
+            mcp.resource(uri, name=name, mime_type=mime_type)(
+                _make_resource_reader(resource_path)
+            )
+
+            metadata.append(
+                {
+                    "uri": uri,
+                    "name": name,
+                    "mime_type": mime_type,
+                }
+            )
 
     return tuple(metadata)
 

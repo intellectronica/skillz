@@ -73,6 +73,37 @@ data-cleaner.zip
     └── clean.py
 ```
 
+### Directory Structure: Skillz vs Claude Code
+
+Skillz supports a more flexible skills directory than Claude Code. In addition to a flat layout, you can organize skills in nested subdirectories and include skills packaged as `.zip` files (as shown in the examples above).
+
+Claude Code, on the other hand, expects a flat skills directory: every immediate subdirectory is a single skill. Nested directories are not discovered, and `.zip` files are not supported.
+
+If you want your skills directory to be compatible with Claude Code (for example, so you can symlink one skills directory between the two tools), you must use the flat layout.
+
+**Claude Code–compatible layout:**
+
+```text
+skills/
+├── hello-world/
+│   ├── SKILL.md
+│   └── run.sh
+└── summarize-text/
+    ├── SKILL.md
+    └── run.py
+```
+
+**Skillz-only layout examples** (not compatible with Claude Code):
+
+```text
+skills/
+├── text-tools/
+│   └── summarize-text/
+│       ├── SKILL.md
+│       └── run.py
+└── image-processing.zip
+```
+
 You can use `skillz --list-skills` (optionally pointing at another skills root)
 to verify which skills the server will expose before connecting it to your
 agent.

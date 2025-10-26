@@ -7,7 +7,9 @@
 
 > ⚠️ **Experimental proof‑of‑concept. Potentially unsafe. Treat skills like untrusted code and run in sandboxes/containers. Use at your own risk.**
 
-**Skillz** is an MCP server that turns [Claude-style skills](https://github.com/anthropics/skills)_(`SKILL.md` plus optional resources)_ into callable tools for any MCP client. It discovers each skill, exposes the authored instructions and resources, and can run bundled helper scripts.
+**Skillz** is an MCP server that turns [Claude-style skills](https://github.com/anthropics/skills) _(`SKILL.md` plus optional resources)_ into callable tools for any MCP client. It discovers each skill, exposes the authored instructions and resources, and can run bundled helper scripts.
+
+> 💡 You can find skills to install at the **[Awesome Skills](http://skills.intellectronica.net/)** directory.
 
 ## Quick Start
 

@@ -37,6 +37,8 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=sha,prefix={{branch}}-,enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=dev,enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5

@@ -37,6 +37,36 @@ _or_
 }
 ```
 
+or Docker
+
+You can run Skillz using Docker for isolation. First, build the Docker image:
+
+```sh
+# Build the Docker image (requires Docker Buildx)
+docker buildx build -t skillz .
+```
+
+To run the Skillz MCP server with your skills directory mounted using Docker, configure your agent as follows: 
+
+Replace `/path/to/skills` with the path to your actual skills directory. Any arguments after `skillz` in the array are passed directly to the Skillz CLI.
+
+```json
+{
+  "skillz": {
+    "command": "docker",
+    "args": [
+      "run",
+      "-i",
+      "--rm",
+      "-v",
+      "/path/to/skills:/skillz",
+      "skillz",
+      "/skillz"
+    ]
+  }
+}
+```
+
 ## Usage
 
 Skillz looks for skills inside the root directory you provide (defaults to

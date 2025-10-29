@@ -465,3 +465,67 @@ Content.
 
     assert result["encoding"] == "utf-8"
     assert result["content"] == "Test data from nested structure"
+
+
+def test_skill_extension_loads_like_zip(tmp_path: Path) -> None:
+    """Test that files with .skill extension are loaded as zip files."""
+    skill_path = tmp_path / "my-skill.skill"
+    create_zip_skill(skill_path, name="SkillExtension")
+
+    registry = SkillRegistry(tmp_path)
+    registry.load()
+
+    assert len(registry.skills) == 1
+    skill = registry.get("skillextension")
+    assert skill.metadata.name == "SkillExtension"
+    assert skill.is_zip
+    assert skill.zip_path == skill_path.resolve()
+
+
+@pytest.mark.asyncio
+async def test_skill_extension_resources_readable(tmp_path: Path) -> None:
+    """Test that resources in .skill files can be read correctly."""
+    skill_path = tmp_path / "test.skill"
+    create_zip_skill(skill_path, name="TestSkillExt")
+
+    registry = SkillRegistry(tmp_path)
+    registry.load()
+
+    server = build_server(registry)
+    tools = await server.get_tools()
+    fetch_tool = tools["fetch_resource"]
+
+    result = await fetch_tool.fn(
+        resource_uri="resource://skillz/testskillext/text/hello.txt"
+    )
+
+    assert result["uri"] == "resource://skillz/testskillext/text/hello.txt"
+    assert result["content"] == "Hello from zip!"
+    assert result["encoding"] == "utf-8"
+
+
+def test_mixed_zip_and_skill_extensions(tmp_path: Path) -> None:
+    """Test that both .zip and .skill files can coexist."""
+    # Create a .zip file
+    zip_path = tmp_path / "skill-one.zip"
+    create_zip_skill(zip_path, name="SkillOne")
+
+    # Create a .skill file
+    skill_path = tmp_path / "skill-two.skill"
+    create_zip_skill(skill_path, name="SkillTwo")
+
+    registry = SkillRegistry(tmp_path)
+    registry.load()
+
+    # Both should be loaded
+    assert len(registry.skills) == 2
+
+    skill_one = registry.get("skillone")
+    skill_two = registry.get("skilltwo")
+
+    assert skill_one.metadata.name == "SkillOne"
+    assert skill_two.metadata.name == "SkillTwo"
+    assert skill_one.is_zip
+    assert skill_two.is_zip
+    assert skill_one.zip_path == zip_path.resolve()
+    assert skill_two.zip_path == skill_path.resolve()

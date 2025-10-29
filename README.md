@@ -65,10 +65,10 @@ Replace `/path/to/skills` with the path to your actual skills directory. Any arg
 ## Usage
 
 Skillz looks for skills inside the root directory you provide (defaults to
-`~/.skillz`). Each skill lives in its own folder or zip archive that includes a
-`SKILL.md` file with YAML front matter describing the skill. Any other files in
-the skill become downloadable resources for your agent (scripts, datasets,
-examples, etc.).
+`~/.skillz`). Each skill lives in its own folder or zip archive (`.zip` or `.skill`)
+that includes a `SKILL.md` file with YAML front matter describing the skill. Any
+other files in the skill become downloadable resources for your agent (scripts,
+datasets, examples, etc.).
 
 An example directory might look like this:
 
@@ -79,12 +79,13 @@ An example directory might look like this:
 │   ├── summarize.py
 │   └── prompts/example.txt
 ├── translate.zip
+├── analyzer.skill
 └── web-search/
     └── SKILL.md
 ```
 
-When packaging skills as zips, include the `SKILL.md` either at the root of the
-archive or inside a single top-level directory:
+When packaging skills as zip archives (`.zip` or `.skill`), include the `SKILL.md`
+either at the root of the archive or inside a single top-level directory:
 
 ```text
 translate.zip
@@ -102,9 +103,9 @@ data-cleaner.zip
 
 ### Directory Structure: Skillz vs Claude Code
 
-Skillz supports a more flexible skills directory than Claude Code. In addition to a flat layout, you can organize skills in nested subdirectories and include skills packaged as `.zip` files (as shown in the examples above).
+Skillz supports a more flexible skills directory than Claude Code. In addition to a flat layout, you can organize skills in nested subdirectories and include skills packaged as `.zip` or `.skill` files (as shown in the examples above).
 
-Claude Code, on the other hand, expects a flat skills directory: every immediate subdirectory is a single skill. Nested directories are not discovered, and `.zip` files are not supported.
+Claude Code, on the other hand, expects a flat skills directory: every immediate subdirectory is a single skill. Nested directories are not discovered, and `.zip` or `.skill` files are not supported.
 
 If you want your skills directory to be compatible with Claude Code (for example, so you can symlink one skills directory between the two tools), you must use the flat layout.
 
@@ -128,7 +129,8 @@ skills/
 │   └── summarize-text/
 │       ├── SKILL.md
 │       └── run.py
-└── image-processing.zip
+├── image-processing.zip
+└── data-analyzer.skill
 ```
 
 You can use `skillz --list-skills` (optionally pointing at another skills root)

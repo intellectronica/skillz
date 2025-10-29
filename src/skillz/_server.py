@@ -311,7 +311,7 @@ class SkillRegistry:
 
         # Then check for zip files in this directory
         for entry in sorted(entries):
-            if entry.is_file() and entry.suffix.lower() == ".zip":
+            if entry.is_file() and entry.suffix.lower() in (".zip", ".skill"):
                 self._try_register_zip_skill(entry)
 
     def _register_dir_skill(self, directory: Path, skill_md: Path) -> None:

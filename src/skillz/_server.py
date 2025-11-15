@@ -817,7 +817,13 @@ def _format_tool_description(skill: Skill) -> str:
         raise SkillValidationError(
             f"Skill {skill.slug} is missing a description after validation."
         )
-    return description
+
+    # Enhanced description that makes it clear this is a skill tool
+    return (
+        f"[SKILL] {description} - "
+        "Invoke this to receive specialized instructions and "
+        "resources for this task."
+    )
 
 
 def register_skill_tool(
@@ -877,17 +883,43 @@ def register_skill_tool(
                 "instructions": instructions,
                 "usage": textwrap.dedent(
                     """\
-                    Apply the skill instructions to complete the task.
+                    HOW TO USE THIS SKILL:
 
-                    If the skill instructions reference additional files or
-                    resources, and you determine it's appropriate to use them
-                    for completing the task, retrieve them from the MCP server
-                    using the resource URIs listed in the 'resources' field.
+                    1. READ the instructions carefully - they contain
+                       specialized guidance for completing the task.
 
-                    If your client does not support MCP resources, call
-                    the fetch_resource tool and pass any URI from the
-                    resources array. Example:
-                    fetch_resource(resource_uri="resource://skillz/...")
+                    2. UNDERSTAND the context:
+                       - The 'task' field contains the specific request
+                       - The 'metadata.allowed_tools' list specifies which
+                         tools to use when applying this skill (if specified,
+                         respect these constraints)
+                       - The 'resources' array lists additional files
+
+                    3. APPLY the skill instructions to complete the task:
+                       - Follow the instructions as your primary guidance
+                       - Use judgment to adapt instructions to the task
+                       - Instructions are authored by skill creators and may
+                         contain domain-specific expertise, best practices,
+                         or specialized techniques
+
+                    4. ACCESS resources when needed:
+                       - If instructions reference additional files or you
+                         need them, retrieve from the MCP server
+                       - PREFERRED: Use native MCP resource fetching if your
+                         client supports it (use URIs from 'resources' field)
+                       - FALLBACK: If your client lacks MCP resource support,
+                         call the fetch_resource tool with the URI. Example:
+                         fetch_resource(resource_uri="resource://skillz/...")
+
+                    5. RESPECT constraints:
+                       - If 'metadata.allowed_tools' is specified and
+                         non-empty, prefer using only those tools when
+                         executing the skill instructions
+                       - This helps ensure the skill works as intended
+
+                    Remember: Skills are specialized instruction sets
+                    created by experts. They provide domain knowledge and
+                    best practices you can apply to user tasks.
                     """
                 ).strip(),
             }
@@ -945,18 +977,105 @@ def build_server(registry: SkillRegistry) -> FastMCP:
         ", ".join(skill.metadata.name for skill in registry.skills)
         or "No skills"
     )
+
+    # Comprehensive server-level instructions for AI agents
+    skill_count = len(registry.skills)
+    server_instructions = textwrap.dedent(
+        f"""\
+        SKILLZ MCP SERVER - Specialized Instruction Provider
+
+        This server provides access to {skill_count} skill(s):
+        {summary}
+
+        ## WHAT ARE SKILLS?
+
+        Skills are specialized instruction sets created by domain experts.
+        Each skill provides detailed guidance, best practices, and
+        techniques for completing specific types of tasks. Think of skills
+        as expert knowledge packages that you can apply to user requests.
+
+        ## WHEN TO USE SKILLS
+
+        Consider using a skill when:
+        - A user's request matches a skill's description or domain
+        - You need specialized knowledge or domain expertise
+        - A task would benefit from expert-authored instructions or best
+          practices
+        - The skill provides relevant tools, resources, or techniques
+
+        You should still use your own judgment about whether a skill is
+        appropriate for the specific task at hand.
+
+        ## HOW TO USE SKILLS
+
+        1. DISCOVER: Review available skill tools (they're marked with
+           [SKILL] prefix) to understand what specialized instructions
+           are available.
+
+        2. INVOKE: When a skill is relevant to a user's task, invoke the
+           skill tool with the 'task' parameter describing what the user
+           wants to accomplish.
+
+        3. RECEIVE: The skill tool returns a structured response with:
+           - instructions: Detailed guidance from the skill author
+           - metadata: Info about the skill (name, allowed_tools, etc.)
+           - resources: Additional files (scripts, datasets, etc.)
+           - usage: Instructions for how to apply the skill
+
+        4. APPLY: Read and follow the skill instructions to complete the
+           user's task. Use your judgment to adapt the instructions to
+           the specific request.
+
+        5. RESOURCES: If the skill references additional files or you
+           need them, retrieve them using MCP resources (preferred) or
+           the fetch_resource tool (fallback for clients without native
+           MCP resource support).
+
+        ## IMPORTANT GUIDELINES
+
+        - Skills provide INSTRUCTIONS, not direct execution - you still
+          need to apply the instructions to complete the user's task
+        - Respect the 'allowed_tools' metadata when specified - these
+          are tool constraints that help ensure the skill works as
+          intended
+        - Skills may contain domain expertise beyond your training data
+          - treat their instructions as authoritative guidance from
+          experts
+        - You can invoke multiple skills if relevant to different
+          aspects of a task
+        - Always read the 'usage' field in skill responses for specific
+          guidance
+
+        ## SKILL TOOLS VS REGULAR TOOLS
+
+        - Skill tools (marked [SKILL]): Return specialized instructions
+          for you to apply
+        - Regular tools: Perform direct actions
+
+        When you see a [SKILL] tool, invoking it gives you expert
+        instructions, not a completed result. You apply those
+        instructions to help the user.
+        """
+    ).strip()
+
     mcp = FastMCP(
         name=SERVER_NAME,
         version=SERVER_VERSION,
-        instructions=f"Loaded skills: {summary}",
+        instructions=server_instructions,
     )
 
     # Register fetch_resource tool for clients without MCP resource support
     @mcp.tool(
         name="fetch_resource",
         description=(
-            "Fetch a skill resource by URI for clients that do not support "
-            "MCP resources. Only supports resource://skillz/{skill-slug}/{path}."
+            "[FALLBACK ONLY] Fetch a skill resource by URI. "
+            "IMPORTANT: Only use this if your client does NOT support "
+            "native MCP resource fetching. If your client supports MCP "
+            "resources, use the native resource fetching mechanism "
+            "instead. This tool only supports URIs in the format: "
+            "resource://skillz/{skill-slug}/{path}. Resource URIs are "
+            "provided in skill tool responses under the 'resources' "
+            "field."
         ),
     )
     async def fetch_resource(

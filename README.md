@@ -62,6 +62,16 @@ Replace `/path/to/skills` with the path to your actual skills directory. Any arg
 }
 ```
 
+## Gemini CLI Extension
+
+A Gemini CLI extension is available in `/gemini-cli`. Install it with:
+
+```bash
+gemini extensions install https://github.com/intellectronica/skillz/gemini-cli
+```
+
+See [gemini-cli/README.md](gemini-cli/README.md) for details.
+
 ## Usage
 
 Skillz looks for skills inside the root directory you provide (defaults to

@@ -1,0 +1,29 @@
+{
+  "name": "skillz",
+  "version": "1.0.0",
+  "description": "Load Anthropic-style Agent Skills into Gemini CLI using the skillz MCP server",
+  "author": "Eleanor Berger <eleanor@intellectronica.net>",
+  "repository": "https://github.com/intellectronica/skillz",
+  "settings": [
+    {
+      "name": "SKILLS_PATH",
+      "description": "Path to skills directory (defaults to ~/.skillz if not specified)",
+      "required": false
+    }
+  ],
+  "mcpServers": {
+    "skillz": {
+      "command": "uvx",
+      "args": [
+        "skillz@latest",
+        "${SKILLS_PATH:-~/.skillz}",
+        "--verbose"
+      ],
+      "timeout": 123456,
+      "env": {
+        "SKILLS_PATH": "${SKILLS_PATH}"
+      }
+    }
+  },
+  "contextFileName": "GEMINI.md"
+}

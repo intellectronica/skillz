@@ -1,6 +1,6 @@
 {
   "name": "skillz",
-  "version": "1.0.0",
+  "version": "0.1.14",
   "description": "Load Anthropic-style Agent Skills into Gemini CLI using the skillz MCP server",
   "author": "Eleanor Berger <eleanor@intellectronica.net>",
   "repository": "https://github.com/intellectronica/skillz",

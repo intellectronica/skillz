@@ -62,6 +62,18 @@ Replace `/path/to/skills` with the path to your actual skills directory. Any arg
 }
 ```
 
+## Gemini CLI Extension
+
+A Gemini CLI extension is available at [intellectronica/gemini-cli-skillz](https://github.com/intellectronica/gemini-cli-skillz).
+
+Install it with:
+
+```bash
+gemini extensions install https://github.com/intellectronica/gemini-cli-skillz
+```
+
+This extension enables Anthropic-style Agent Skills in Gemini CLI using the skillz MCP server.
+
 ## Usage
 
 Skillz looks for skills inside the root directory you provide (defaults to

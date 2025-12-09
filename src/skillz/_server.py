@@ -34,6 +34,10 @@ from fastmcp import Context, FastMCP
 from fastmcp.exceptions import ToolError
 
 from ._version import __version__
+from ._skill_usage_logger import (
+    SkillUsageLogger,
+    get_usage_logger,
+)
 
 
 LOGGER = logging.getLogger("skillz")
@@ -853,6 +857,19 @@ def register_skill_tool(
             task,
         )
 
+        # Log skill invocation
+        usage_logger = get_usage_logger()
+        session_id = ""
+        if usage_logger:
+            session_id = usage_logger.log_skill_invoked(
+                skill_slug=bound_skill.slug,
+                task=task,
+                metadata={
+                    "name": bound_skill.metadata.name,
+                    "resource_count": len(bound_resources),
+                }
+            )
+
         try:
             if not task.strip():
                 raise SkillError(
@@ -860,6 +877,15 @@ def register_skill_tool(
                 )
 
             instructions = bound_skill.read_body()
+
+            # Log skill read
+            if usage_logger:
+                usage_logger.log_skill_read(
+                    skill_slug=bound_skill.slug,
+                    reader="tool_invocation",
+                    session_id=session_id,
+                )
+
             resource_entries = [
                 {
                     "uri": entry["uri"],
@@ -932,6 +958,16 @@ def register_skill_tool(
                 exc,
                 exc_info=True,
             )
+
+            # Log failure
+            if usage_logger:
+                usage_logger.log_skill_failure(
+                    session_id=session_id,
+                    skill_slug=bound_skill.slug,
+                    error=str(exc),
+                    error_type=exc.code,
+                )
+
             raise ToolError(str(exc)) from exc
 
     return _skill_tool
@@ -1085,6 +1121,13 @@ def build_server(registry: SkillRegistry) -> FastMCP:
         """Fetch a resource by URI and return its content."""
         LOGGER.info("fetch_resource invoked for URI: %s", resource_uri)
 
+        # Extract skill slug from URI for logging
+        skill_slug = "unknown"
+        if resource_uri.startswith("resource://skillz/"):
+            parts = resource_uri[len("resource://skillz/"):].split("/", 1)
+            if parts:
+                skill_slug = unquote(parts[0])
+
         if not resource_uri:
             result = _make_error_resource(
                 "(missing)", "resource_uri is required"
@@ -1092,6 +1135,14 @@ def build_server(registry: SkillRegistry) -> FastMCP:
         else:
             try:
                 result = _fetch_resource_json(registry, resource_uri)
+
+                # Log successful resource fetch
+                usage_logger = get_usage_logger()
+                if usage_logger:
+                    usage_logger.log_resource_fetched(
+                        skill_slug=skill_slug,
+                        resource_uri=resource_uri,
+                    )
             except Exception as exc:  # pragma: no cover - defensive
                 LOGGER.error(
                     "Unexpected error fetching resource %s: %s",
@@ -1170,6 +1221,29 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="Write very verbose logs to /tmp/skillz.log",
     )
+    # Usage logging arguments
+    parser.add_argument(
+        "--usage-log",
+        choices=("on", "off", "file", "stderr", "both"),
+        default=None,
+        help=(
+            "Control skill usage logging: "
+            "'on' = enable to file (default), "
+            "'off' = disable, "
+            "'file' = log to JSONL file only, "
+            "'stderr' = log to stderr only, "
+            "'both' = log to file and stderr"
+        ),
+    )
+    parser.add_argument(
+        "--usage-log-file",
+        type=Path,
+        default=None,
+        help=(
+            "Path to usage log file "
+            "(default: {skills_root}/../logs/skill_usage.jsonl)"
+        ),
+    )
     parser.add_argument(
         "--list-skills",
         action="store_true",
@@ -1192,6 +1266,32 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     registry = SkillRegistry(args.skills_root)
     registry.load()
+
+    # Initialize skill usage logger with CLI overrides
+    usage_config_override: Optional[Dict[str, Any]] = None
+    if args.usage_log is not None or args.usage_log_file is not None:
+        usage_config_override = {"logging": {}}
+        if args.usage_log == "off":
+            usage_config_override["logging"]["enabled"] = False
+        elif args.usage_log in ("on", "file"):
+            usage_config_override["logging"]["enabled"] = True
+            usage_config_override["logging"]["output"] = "file"
+        elif args.usage_log == "stderr":
+            usage_config_override["logging"]["enabled"] = True
+            usage_config_override["logging"]["output"] = "stderr"
+        elif args.usage_log == "both":
+            usage_config_override["logging"]["enabled"] = True
+            usage_config_override["logging"]["output"] = "both"
+
+        if args.usage_log_file:
+            usage_config_override["logging"]["file_path"] = str(
+                args.usage_log_file
+            )
+
+    SkillUsageLogger.initialize(
+        args.skills_root,
+        config_override=usage_config_override
+    )
 
     if args.list_skills:
         list_skills(registry)

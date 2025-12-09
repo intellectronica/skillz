@@ -180,12 +180,13 @@ class SkillUsageLogger:
         if self._config.file_path:
             log_file = self._config.file_path
         elif self._skills_root:
-            # Default to logs directory in skills root
+            # Default to logs directory in skills root parent
+            # Use skill_executions.jsonl for unified logging with script loggers
             logs_dir = self._skills_root.parent / "logs"
-            log_file = logs_dir / "skill_usage.jsonl"
+            log_file = logs_dir / "skill_executions.jsonl"
         else:
             # Fallback to temp directory
-            log_file = Path("/tmp/skillz_usage.jsonl")
+            log_file = Path("/tmp/skillz_executions.jsonl")
 
         # Ensure parent directory exists
         try:

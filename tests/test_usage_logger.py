@@ -133,7 +133,7 @@ class TestSkillUsageLogger:
     def test_log_skill_invoked_writes_to_file(self, temp_skills_root):
         """Test that skill invocation is logged to file."""
         SkillUsageLogger._instance = None
-        log_file = temp_skills_root.parent / "logs" / "skill_usage.jsonl"
+        log_file = temp_skills_root.parent / "logs" / "skill_executions.jsonl"
 
         logger = SkillUsageLogger.initialize(temp_skills_root)
         logger.log_skill_invoked(
@@ -155,7 +155,7 @@ class TestSkillUsageLogger:
     def test_log_skill_read(self, temp_skills_root):
         """Test that skill read is logged."""
         SkillUsageLogger._instance = None
-        log_file = temp_skills_root.parent / "logs" / "skill_usage.jsonl"
+        log_file = temp_skills_root.parent / "logs" / "skill_executions.jsonl"
 
         logger = SkillUsageLogger.initialize(temp_skills_root)
         logger.log_skill_read(
@@ -176,7 +176,7 @@ class TestSkillUsageLogger:
     def test_log_resource_fetched(self, temp_skills_root):
         """Test that resource fetch is logged."""
         SkillUsageLogger._instance = None
-        log_file = temp_skills_root.parent / "logs" / "skill_usage.jsonl"
+        log_file = temp_skills_root.parent / "logs" / "skill_executions.jsonl"
 
         logger = SkillUsageLogger.initialize(temp_skills_root)
         logger.log_resource_fetched(
@@ -195,7 +195,7 @@ class TestSkillUsageLogger:
     def test_log_skill_complete(self, temp_skills_root):
         """Test that skill completion is logged."""
         SkillUsageLogger._instance = None
-        log_file = temp_skills_root.parent / "logs" / "skill_usage.jsonl"
+        log_file = temp_skills_root.parent / "logs" / "skill_executions.jsonl"
 
         logger = SkillUsageLogger.initialize(temp_skills_root)
         logger.log_skill_complete(
@@ -220,7 +220,7 @@ class TestSkillUsageLogger:
     def test_disabled_logging_skips_writes(self, temp_skills_root):
         """Test that disabled logging doesn't write anything."""
         SkillUsageLogger._instance = None
-        log_file = temp_skills_root.parent / "logs" / "skill_usage.jsonl"
+        log_file = temp_skills_root.parent / "logs" / "skill_executions.jsonl"
 
         logger = SkillUsageLogger.initialize(
             temp_skills_root,

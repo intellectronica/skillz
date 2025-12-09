@@ -26,6 +26,7 @@ class TestSkillUsageLogConfig:
         assert config.events["skill_invoked"] is True
         assert config.events["skill_read"] is True
         assert config.events["resource_fetched"] is True
+        assert config.events["skill_failure"] is True
 
     def test_from_dict_empty(self):
         """Test creating config from empty dict uses defaults."""
@@ -192,30 +193,28 @@ class TestSkillUsageLogger:
         assert entry["skill"] == "test-skill"
         assert "resource://skillz" in entry["resource_uri"]
 
-    def test_log_skill_complete(self, temp_skills_root):
-        """Test that skill completion is logged."""
+    def test_log_skill_failure(self, temp_skills_root):
+        """Test that skill failure is logged."""
         SkillUsageLogger._instance = None
         log_file = temp_skills_root.parent / "logs" / "skill_executions.jsonl"
 
         logger = SkillUsageLogger.initialize(temp_skills_root)
-        logger.log_skill_complete(
+        logger.log_skill_failure(
             session_id="abc123",
             skill_slug="test-skill",
-            status="success",
-            duration_ms=150,
-            result={"key": "value"}
+            error="Something went wrong",
+            error_type="validation",
         )
 
         assert log_file.exists()
         with open(log_file) as f:
             entry = json.loads(f.readline())
 
-        assert entry["event"] == "skill_complete"
+        assert entry["event"] == "skill_failure"
         assert entry["session_id"] == "abc123"
         assert entry["skill"] == "test-skill"
-        assert entry["status"] == "success"
-        assert entry["duration_ms"] == 150
-        assert entry["result"] == {"key": "value"}
+        assert entry["error"] == "Something went wrong"
+        assert entry["error_type"] == "validation"
 
     def test_disabled_logging_skips_writes(self, temp_skills_root):
         """Test that disabled logging doesn't write anything."""

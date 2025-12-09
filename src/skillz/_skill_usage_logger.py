@@ -18,7 +18,8 @@ Example config:
     "events": {
       "skill_invoked": true,
       "skill_read": true,
-      "resource_fetched": true
+      "resource_fetched": true,
+      "skill_failure": true
     }
   }
 }
@@ -51,6 +52,7 @@ class SkillUsageLogConfig:
         "skill_invoked": True,
         "skill_read": True,
         "resource_fetched": True,
+        "skill_failure": True,
     })
 
     @classmethod
@@ -63,6 +65,7 @@ class SkillUsageLogConfig:
             "skill_invoked": True,
             "skill_read": True,
             "resource_fetched": True,
+            "skill_failure": True,
         }
         merged_events = {**default_events, **events}
 
@@ -277,29 +280,34 @@ class SkillUsageLogger:
         }
         self._write_log_entry(entry)
 
-    def log_skill_complete(
+    def log_skill_failure(
         self,
         session_id: str,
         skill_slug: str,
-        status: str,
-        duration_ms: Optional[int] = None,
-        result: Optional[Dict[str, Any]] = None
+        error: str,
+        error_type: Optional[str] = None,
     ) -> None:
-        """Log skill invocation completion."""
-        if not self._config.should_log_event("skill_invoked"):
+        """Log skill invocation failure.
+
+        Args:
+            session_id: Session ID from log_skill_invoked
+            skill_slug: The skill's slug identifier
+            error: Error message describing the failure
+            error_type: Optional error classification (e.g., 'validation',
+                'io', 'network')
+        """
+        if not self._config.should_log_event("skill_failure"):
             return
 
         entry: Dict[str, Any] = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "session_id": session_id,
-            "event": "skill_complete",
+            "event": "skill_failure",
             "skill": skill_slug,
-            "status": status,
+            "error": error,
         }
-        if duration_ms is not None:
-            entry["duration_ms"] = duration_ms
-        if result:
-            entry["result"] = result
+        if error_type:
+            entry["error_type"] = error_type
 
         self._write_log_entry(entry)
 

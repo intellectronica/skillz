@@ -851,9 +851,6 @@ def register_skill_tool(
         task: str,
         ctx: Optional[Context] = None,
     ) -> Mapping[str, Any]:
-        import time
-        start_time = time.time()
-
         LOGGER.info(
             "Skill %s tool invoked task=%s",
             bound_skill.slug,
@@ -953,16 +950,6 @@ def register_skill_tool(
                 ).strip(),
             }
 
-            # Log successful completion
-            if usage_logger:
-                duration_ms = int((time.time() - start_time) * 1000)
-                usage_logger.log_skill_complete(
-                    session_id=session_id,
-                    skill_slug=bound_skill.slug,
-                    status="success",
-                    duration_ms=duration_ms,
-                )
-
             return response
         except SkillError as exc:
             LOGGER.error(
@@ -974,13 +961,11 @@ def register_skill_tool(
 
             # Log failure
             if usage_logger:
-                duration_ms = int((time.time() - start_time) * 1000)
-                usage_logger.log_skill_complete(
+                usage_logger.log_skill_failure(
                     session_id=session_id,
                     skill_slug=bound_skill.slug,
-                    status="error",
-                    duration_ms=duration_ms,
-                    result={"error": str(exc)},
+                    error=str(exc),
+                    error_type=exc.code,
                 )
 
             raise ToolError(str(exc)) from exc

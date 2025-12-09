@@ -13,15 +13,23 @@ from ._server import (
     main,
     parse_args,
 )
+from ._skill_usage_logger import (
+    SkillUsageLogger,
+    SkillUsageLogConfig,
+    get_usage_logger,
+)
 
 __all__ = [
     "Skill",
     "SkillError",
     "SkillMetadata",
     "SkillRegistry",
+    "SkillUsageLogConfig",
+    "SkillUsageLogger",
     "SkillValidationError",
     "build_server",
     "configure_logging",
+    "get_usage_logger",
     "list_skills",
     "main",
     "parse_args",

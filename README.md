@@ -74,6 +74,12 @@ gemini extensions install https://github.com/intellectronica/gemini-cli-skillz
 
 This extension enables Anthropic-style Agent Skills in Gemini CLI using the skillz MCP server.
 
+## Standards Compliance Report
+
+See [docs/standards-compliance-report.md](docs/standards-compliance-report.md)
+for a detailed comparison against Agent Skills, OpenCode, and Codex
+conventions.
+
 ## Usage
 
 Skillz looks for skills inside the root directory you provide (defaults to

@@ -205,7 +205,7 @@ This aligns with the documented expectations of OpenCode and Codex.
 
 ---
 
-## Open Questions / Follow‑ups
+## Open Questions / Follow-ups
 
 - **Agent Skills standard (agentskills.io):** Confirm the official schema once
   the site is accessible and verify required fields or directory structure.

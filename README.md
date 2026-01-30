@@ -164,6 +164,39 @@ agent.
 | `--verbose` | Emit debug logging to the console. |
 | `--log` | Mirror verbose logs to `/tmp/skillz.log`. |
 
+## Discussion: Repository Improvement Report (2025-01-14)
+
+This discussion item summarizes opportunities identified during a repository
+review to help prioritize future improvements.
+
+### Strengths
+- Clear core goal and concise CLI reference.
+- Good test coverage for skill discovery, zip handling, and resource fetching.
+- Defensive error handling around invalid skills and path traversal.
+
+### Improvement Opportunities
+- **Docs (developer setup):** Add a short “Development” section covering
+  `uv sync`, `uv run ruff check`, and `uv run pytest`, plus the required Python
+  version, so contributors can run the same checks as CI.
+- **Docs (CLI examples):** Provide examples for `--list-skills`, HTTP/SSE
+  transports, and the `--path` flag, including how to connect a client to
+  the HTTP/SSE endpoints.
+- **Docs (safety):** Expand the security note with practical guidance on
+  sandboxing, permission boundaries, and how to handle executable resources.
+- **Contribution workflow:** Add a `CONTRIBUTING.md` (or similar) to document
+  expected PR practices, test commands, and release process.
+- **Operational logging:** Consider making the log file path configurable
+  (flag or env var) and document log rotation expectations.
+- **UX for zip-based skills:** When listing skills, consider printing the zip
+  filename and top-level prefix so users can identify the actual archive.
+- **Quality gates:** Add a CI status badge to the README for quick visibility
+  into test health.
+
+### Proposed Next Steps
+1. Add a lightweight contributor guide and dev setup section to the README.
+2. Capture HTTP/SSE usage examples and expected URLs for clients.
+3. Decide whether to make `/tmp/skillz.log` configurable or keep it fixed.
+
 ---
 
 > Made with 🫶 by [`@intellectronica`](https://intellectronica.net)

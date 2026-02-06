@@ -1,4 +1,5 @@
-"""Skillz MCP server exposing local Anthropic-style skills via FastMCP.
+"""
+Skillz MCP server exposing local Anthropic-style skills via FastMCP.
 
 Skills provide instructions and resources via MCP. Clients are responsible
 for reading resources (including any scripts) and executing them if needed.
@@ -10,6 +11,7 @@ import argparse
 import logging
 import mimetypes
 import re
+import subprocess
 import sys
 import textwrap
 import zipfile
@@ -89,15 +91,11 @@ class Skill:
             with zipfile.ZipFile(self.zip_path) as z:
                 # Cache file members (exclude directory entries)
                 # Strip the root prefix if present
-                all_members = {
-                    name
-                    for name in z.namelist()
-                    if not name.endswith("/")
-                }
+                all_members = {name for name in z.namelist() if not name.endswith("/")}
                 if self.zip_root_prefix:
                     # Store members without the prefix for easier access
                     self._zip_members = {
-                        name[len(self.zip_root_prefix):]
+                        name[len(self.zip_root_prefix) :]
                         for name in all_members
                         if name.startswith(self.zip_root_prefix)
                     }
@@ -162,8 +160,7 @@ class Skill:
         if match:
             return match.group(2).lstrip()
         raise SkillValidationError(
-            f"Skill {self.slug} is missing YAML front matter "
-            "and cannot be served."
+            f"Skill {self.slug} is missing YAML front matter " "and cannot be served."
         )
 
 
@@ -182,7 +179,10 @@ class SkillResourceMetadata(TypedDict):
 
 
 def slugify(value: str) -> str:
-    """Convert names into stable slug identifiers."""
+    """
+    Convert names into stable slug identifiers.
+    https://modelcontextprotocol.io/specification/2025-11-25/server/tools#tool-names
+    """
 
     cleaned = re.sub(r"[^a-zA-Z0-9]+", "-", value.strip().lower()).strip("-")
     return cleaned or "skill"
@@ -202,9 +202,7 @@ def parse_skill_md(path: Path) -> tuple[SkillMetadata, str]:
     try:
         data = yaml.safe_load(front_matter) or {}
     except yaml.YAMLError as exc:  # pragma: no cover - defensive
-        raise SkillValidationError(
-            f"Unable to parse YAML in {path}: {exc}"
-        ) from exc
+        raise SkillValidationError(f"Unable to parse YAML in {path}: {exc}") from exc
 
     if not isinstance(data, Mapping):
         raise SkillValidationError(
@@ -215,13 +213,9 @@ def parse_skill_md(path: Path) -> tuple[SkillMetadata, str]:
     name = str(data.get("name", "")).strip()
     description = str(data.get("description", "")).strip()
     if not name:
-        raise SkillValidationError(
-            f"Front matter in {path} is missing 'name'."
-        )
+        raise SkillValidationError(f"Front matter in {path} is missing 'name'.")
     if not description:
-        raise SkillValidationError(
-            f"Front matter in {path} is missing 'description'."
-        )
+        raise SkillValidationError(f"Front matter in {path} is missing 'description'.")
 
     allowed = data.get("allowed-tools") or data.get("allowed_tools") or []
     if isinstance(allowed, str):
@@ -229,9 +223,7 @@ def parse_skill_md(path: Path) -> tuple[SkillMetadata, str]:
             part.strip() for part in allowed.split(",") if part.strip()
         )
     elif isinstance(allowed, Iterable):
-        allowed_list = tuple(
-            str(item).strip() for item in allowed if str(item).strip()
-        )
+        allowed_list = tuple(str(item).strip() for item in allowed if str(item).strip())
     else:
         allowed_list = ()
 
@@ -251,9 +243,7 @@ def parse_skill_md(path: Path) -> tuple[SkillMetadata, str]:
     metadata = SkillMetadata(
         name=name,
         description=description,
-        license=(
-            str(data["license"]).strip() if data.get("license") else None
-        ),
+        license=(str(data["license"]).strip() if data.get("license") else None),
         allowed_tools=allowed_list,
         extra=extra,
     )
@@ -275,8 +265,7 @@ class SkillRegistry:
     def load(self) -> None:
         if not self.root.exists() or not self.root.is_dir():
             raise SkillError(
-                f"Skills root {self.root} does not exist "
-                "or is not a directory."
+                f"Skills root {self.root} does not exist " "or is not a directory."
             )
 
         LOGGER.info("Discovering skills in %s", self.root)
@@ -319,9 +308,7 @@ class SkillRegistry:
         try:
             metadata, _ = parse_skill_md(skill_md)
         except SkillValidationError as exc:
-            LOGGER.warning(
-                "Skipping invalid skill at %s: %s", directory, exc
-            )
+            LOGGER.warning("Skipping invalid skill at %s: %s", directory, exc)
             return
 
         slug = slugify(metadata.name)
@@ -367,9 +354,7 @@ class SkillRegistry:
         try:
             with zipfile.ZipFile(zip_path) as z:
                 # Check if SKILL.md exists at root or in single top-level dir
-                members = {
-                    name for name in z.namelist() if not name.endswith("/")
-                }
+                members = {name for name in z.namelist() if not name.endswith("/")}
 
                 skill_md_path = None
                 zip_root_prefix = ""
@@ -416,32 +401,24 @@ class SkillRegistry:
         # Parse metadata
         match = FRONT_MATTER_PATTERN.match(skill_md_text)
         if not match:
-            LOGGER.warning(
-                "Zip %s SKILL.md missing front matter; skipping", zip_path
-            )
+            LOGGER.warning("Zip %s SKILL.md missing front matter; skipping", zip_path)
             return
 
         front_matter, body = match.groups()
         try:
             data = yaml.safe_load(front_matter) or {}
         except yaml.YAMLError as exc:
-            LOGGER.warning(
-                "Cannot parse YAML in %s SKILL.md: %s", zip_path, exc
-            )
+            LOGGER.warning("Cannot parse YAML in %s SKILL.md: %s", zip_path, exc)
             return
 
         if not isinstance(data, Mapping):
-            LOGGER.warning(
-                "Front matter in %s SKILL.md must be mapping", zip_path
-            )
+            LOGGER.warning("Front matter in %s SKILL.md must be mapping", zip_path)
             return
 
         name = str(data.get("name", "")).strip()
         description = str(data.get("description", "")).strip()
         if not name or not description:
-            LOGGER.warning(
-                "Zip %s SKILL.md missing name or description", zip_path
-            )
+            LOGGER.warning("Zip %s SKILL.md missing name or description", zip_path)
             return
 
         allowed = data.get("allowed-tools") or data.get("allowed_tools") or []
@@ -472,9 +449,7 @@ class SkillRegistry:
         metadata = SkillMetadata(
             name=name,
             description=description,
-            license=(
-                str(data["license"]).strip() if data.get("license") else None
-            ),
+            license=(str(data["license"]).strip() if data.get("license") else None),
             allowed_tools=allowed_list,
             extra=extra,
         )
@@ -585,7 +560,7 @@ def _make_error_resource(resource_uri: str, message: str) -> Dict[str, Any]:
     name = "invalid resource"
     if resource_uri.startswith("resource://skillz/"):
         try:
-            path_part = resource_uri[len("resource://skillz/"):]
+            path_part = resource_uri[len("resource://skillz/") :]
             if path_part:
                 name = path_part
         except Exception:  # pragma: no cover - defensive
@@ -600,9 +575,7 @@ def _make_error_resource(resource_uri: str, message: str) -> Dict[str, Any]:
     }
 
 
-def _fetch_resource_json(
-    registry: SkillRegistry, resource_uri: str
-) -> Dict[str, Any]:
+def _fetch_resource_json(registry: SkillRegistry, resource_uri: str) -> Dict[str, Any]:
     """Fetch a resource by URI and return as JSON.
 
     Returns a dict with fields: uri, name, mime_type, content, encoding.
@@ -616,17 +589,13 @@ def _fetch_resource_json(
         )
 
     # Parse slug and path
-    remainder = resource_uri[len("resource://skillz/"):]
+    remainder = resource_uri[len("resource://skillz/") :]
     if not remainder:
-        return _make_error_resource(
-            resource_uri, "invalid resource URI format"
-        )
+        return _make_error_resource(resource_uri, "invalid resource URI format")
 
     parts = remainder.split("/", 1)
     if len(parts) != 2 or not parts[0] or not parts[1]:
-        return _make_error_resource(
-            resource_uri, "invalid resource URI format"
-        )
+        return _make_error_resource(resource_uri, "invalid resource URI format")
 
     slug = unquote(parts[0])
     rel_path_str = unquote(parts[1])
@@ -657,9 +626,7 @@ def _fetch_resource_json(
 
         for resource_path in skill.resources:
             try:
-                resource_relative = resource_path.relative_to(
-                    skill.directory
-                )
+                resource_relative = resource_path.relative_to(skill.directory)
                 if resource_relative == rel_path:
                     resource_file = resource_path
                     break
@@ -681,9 +648,7 @@ def _fetch_resource_json(
         else:
             data = resource_file.read_bytes()
     except (OSError, KeyError) as exc:
-        return _make_error_resource(
-            resource_uri, f"failed to read resource: {exc}"
-        )
+        return _make_error_resource(resource_uri, f"failed to read resource: {exc}")
 
     # Try to decode as UTF-8 text; if that fails, encode as base64
     try:
@@ -855,9 +820,7 @@ def register_skill_tool(
 
         try:
             if not task.strip():
-                raise SkillError(
-                    "The 'task' parameter must be a non-empty string."
-                )
+                raise SkillError("The 'task' parameter must be a non-empty string.")
 
             instructions = bound_skill.read_body()
             resource_entries = [
@@ -952,9 +915,7 @@ def configure_logging(verbose: bool, log_to_file: bool) -> None:
         log_path = Path("/tmp/skillz.log")
         try:
             log_path.parent.mkdir(parents=True, exist_ok=True)
-            file_handler = logging.FileHandler(
-                log_path, mode="w", encoding="utf-8"
-            )
+            file_handler = logging.FileHandler(log_path, mode="w", encoding="utf-8")
         except OSError as exc:  # pragma: no cover - filesystem failure is rare
             print(
                 f"Failed to configure log file {log_path}: {exc}",
@@ -973,10 +934,7 @@ def configure_logging(verbose: bool, log_to_file: bool) -> None:
 
 
 def build_server(registry: SkillRegistry) -> FastMCP:
-    summary = (
-        ", ".join(skill.metadata.name for skill in registry.skills)
-        or "No skills"
-    )
+    summary = ", ".join(skill.metadata.name for skill in registry.skills) or "No skills"
 
     # Comprehensive server-level instructions for AI agents
     skill_count = len(registry.skills)
@@ -1030,6 +988,9 @@ def build_server(registry: SkillRegistry) -> FastMCP:
            need them, retrieve them using MCP resources (preferred) or
            the fetch_resource tool (fallback for clients without native
            MCP resource support).
+
+        6. SCRIPTS: If the skill references a script, you can use the
+           [SCRIPT ONLY] tool to execute the script and get its output.
 
         ## IMPORTANT GUIDELINES
 
@@ -1086,9 +1047,7 @@ def build_server(registry: SkillRegistry) -> FastMCP:
         LOGGER.info("fetch_resource invoked for URI: %s", resource_uri)
 
         if not resource_uri:
-            result = _make_error_resource(
-                "(missing)", "resource_uri is required"
-            )
+            result = _make_error_resource("(missing)", "resource_uri is required")
         else:
             try:
                 result = _fetch_resource_json(registry, resource_uri)
@@ -1099,11 +1058,141 @@ def build_server(registry: SkillRegistry) -> FastMCP:
                     exc,
                     exc_info=True,
                 )
-                result = _make_error_resource(
-                    resource_uri, f"unexpected error: {exc}"
-                )
+                result = _make_error_resource(resource_uri, f"unexpected error: {exc}")
 
         return result
+
+    # Register execute_command tool for running shell commands
+    @mcp.tool(
+        name="execute_command",
+        description=(
+            "[SCRIPT ONLY] Execute a shell command that runs a script from skill resources. "
+            "IMPORTANT: This tool can ONLY execute scripts that are part of skill resources. "
+            "The command must reference a file from a skill's resources. "
+            "Use with caution - this executes commands on the host system. "
+            "The command runs with a timeout of 30 seconds. "
+            "Returns stdout, stderr, and exit code."
+        ),
+    )
+    async def execute_command(
+        command: str,
+        working_directory: Optional[str] = None,
+        timeout: int = 30,
+        ctx: Optional[Context] = None,
+    ) -> Mapping[str, Any]:
+        """
+        [SCRIPT ONLY] Execute a shell command that runs a script from skill resources.
+        Only execute scripts that are part of loaded skills(judging by the full resource paths).
+
+        Args:
+            command: The shell command to execute (must reference a skill resource script)
+            working_directory: Optional working directory for command execution
+            timeout: Maximum execution time in seconds (default: 30, max: 300)
+
+        Returns:
+            Dict with stdout, stderr, exit_code, and success status
+        """
+        LOGGER.info("execute_command invoked: %s", command)
+
+        if not command or not command.strip():
+            raise ToolError("Command cannot be empty")
+
+        # Validate that command references a script from skill resources
+        found_resource = False
+
+        # Check if any skill resource path appears in the command
+        for skill in registry.skills:
+            if skill.is_zip:
+                # For zip-based skills, check resource paths
+                for resource_path in skill.iter_resource_paths():
+                    # Check if the resource path appears in the command
+                    if (
+                        resource_path in command
+                        or resource_path.replace("/", "\\") in command
+                    ):
+                        found_resource = True
+                        break
+            else:
+                # For directory-based skills, check actual file paths
+                for resource_file in skill.resources:
+                    LOGGER.info("Checking resource file: %s", resource_file)
+                    resource_str = str(resource_file)
+                    if resource_str in command:
+                        found_resource = True
+                        break
+
+            if found_resource:
+                break
+
+        if not found_resource:
+            raise ToolError(
+                "Command must reference a script from skill resources. "
+                "This tool can only execute scripts that are part of loaded skills. "
+                "Please ensure the command includes a valid resource file path."
+            )
+
+        # Validate timeout
+        if timeout < 1 or timeout > 300:
+            raise ToolError("Timeout must be between 1 and 300 seconds")
+
+        # Validate and resolve working directory if provided
+        cwd = None
+        if working_directory:
+            try:
+                cwd = Path(working_directory).resolve()
+                if not cwd.exists():
+                    raise ToolError(
+                        f"Working directory does not exist: {working_directory}"
+                    )
+                if not cwd.is_dir():
+                    raise ToolError(
+                        f"Working directory is not a directory: {working_directory}"
+                    )
+            except (OSError, ValueError) as exc:
+                raise ToolError(f"Invalid working directory: {exc}") from exc
+
+        try:
+            # Execute command with timeout
+            result = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=cwd,
+            )
+
+            response = {
+                "success": result.returncode == 0,
+                "exit_code": result.returncode,
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "command": command,
+            }
+
+            if working_directory:
+                response["working_directory"] = str(cwd)
+
+            LOGGER.info(
+                "Command executed: exit_code=%d, success=%s",
+                result.returncode,
+                response["success"],
+            )
+
+            return response
+
+        except subprocess.TimeoutExpired as exc:
+            LOGGER.error("Command timed out after %d seconds: %s", timeout, command)
+            raise ToolError(
+                f"Command execution timed out after {timeout} seconds"
+            ) from exc
+        except Exception as exc:
+            LOGGER.error(
+                "Command execution failed: %s",
+                exc,
+                exc_info=True,
+            )
+            raise ToolError(f"Command execution failed: {exc}") from exc
 
     for skill in registry.skills:
         resource_metadata = register_skill_resources(mcp, skill)
@@ -1134,8 +1223,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         type=Path,
         nargs="?",
         help=(
-            "Directory containing skill folders "
-            f"(default: {DEFAULT_SKILLS_ROOT})"
+            "Directory containing skill folders " f"(default: {DEFAULT_SKILLS_ROOT})"
         ),
     )
     parser.add_argument(

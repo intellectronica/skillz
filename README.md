@@ -11,6 +11,10 @@
 
 > 💡 You can find skills to install at the **[Skills Supermarket](http://skills.intellectronica.net/)** directory.
 
+<a href="https://glama.ai/mcp/servers/@intellectronica/skillz">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@intellectronica/skillz/badge" alt="Skillz MCP server" />
+</a>
+
 ## Quick Start
 
 To run the MCP server in your agent, use the following config (or equivalent):
